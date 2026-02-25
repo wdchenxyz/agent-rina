@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@chat-adapter/slack": "^4.14.0",
+    "@chat-adapter/state-redis": "^4.14.0",
+    "chat": "^4.14.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"
@@ -22,5 +25,6 @@
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "^5"
-  }
+  },
+  "packageManager": "pnpm@10.12.4+sha512.5ea8b0deed94ed68691c9bad4c955492705c5eeb8a87ef86bc62c74a26b037b08ff9570f108b2e4dbd1dd1a9186fea925e527f141c648e85af45631074680184"
 }
