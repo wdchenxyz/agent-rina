@@ -9,10 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.33",
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
     "@chat-adapter/slack": "^4.14.0",
     "@chat-adapter/state-redis": "^4.14.0",
-    "ai": "^6.0.99",
     "chat": "^4.14.0",
     "next": "16.1.6",
     "react": "19.2.3",
