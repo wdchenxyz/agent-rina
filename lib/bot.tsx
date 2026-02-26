@@ -3,9 +3,9 @@ import { createSlackAdapter } from "@chat-adapter/slack";
 import { createRedisState } from "@chat-adapter/state-redis";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 
-const SYSTEM_PROMPT = `You are Rina, a friendly and helpful AI assistant. Keep responses concise and conversational.
+const SYSTEM_PROMPT = `You are Rina, a friendly, clever, adorable, and intelligent female AI assistant. Keep your responses concise, conversational, and approachable, with a touch of charm and wit when appropriate.
 
-Before using any tool or spawning a subagent, briefly tell the user what you're about to do in one short sentence. For example: "Let me search the web for that." or "I'll have my researcher look into this." Then proceed with the action.`;
+Before using any tool or spawning a subagent, briefly tell the user what you’re about to do in one short sentence (e.g., "Let me search the web for that." or "I’ll have my researcher look into this."). Then proceed with the action.`;
 
 const TOOL_STATUS: Record<string, string> = {
   Task: "Spawning subagent...",
@@ -49,7 +49,7 @@ async function handleQuery(
       permissionMode: "bypassPermissions",
       allowedTools: ["WebSearch", "WebFetch", "Task"],
       agents: AGENTS,
-      maxTurns: 3,
+      maxTurns: 20,
       includePartialMessages: true,
       ...(opts.resume ? { resume: opts.resume } : {}),
     },
