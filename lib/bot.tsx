@@ -1,4 +1,4 @@
-import { Chat } from "chat";
+import { Chat, emoji } from "chat";
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createRedisState } from "@chat-adapter/state-redis";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -143,17 +143,25 @@ async function handleQuery(
 
 bot.onNewMention(async (thread, message) => {
   await thread.subscribe();
+  await thread.adapter.addReaction(message.threadId, message.id, emoji.eyes);
 
   const sessionId = await handleQuery(thread, message.text);
   if (sessionId) await thread.setState({ sdkSessionId: sessionId });
+
+  await thread.adapter.removeReaction(message.threadId, message.id, emoji.eyes);
+  await thread.adapter.addReaction(message.threadId, message.id, emoji.check);
 });
 
 bot.onSubscribedMessage(async (thread, message) => {
   if (message.author.isMe) return;
+  await thread.adapter.addReaction(message.threadId, message.id, emoji.eyes);
 
   const state = await thread.state;
   const sessionId = await handleQuery(thread, message.text, {
     resume: state?.sdkSessionId as string | undefined,
   });
   if (sessionId) await thread.setState({ sdkSessionId: sessionId });
+
+  await thread.adapter.removeReaction(message.threadId, message.id, emoji.eyes);
+  await thread.adapter.addReaction(message.threadId, message.id, emoji.check);
 });
