@@ -1,6 +1,8 @@
 import { after } from "next/server";
 import { bot } from "@/lib/bot";
+
 type Platform = keyof typeof bot.webhooks;
+
 export async function POST(
   request: Request,
   context: RouteContext<"/api/webhooks/[platform]">
@@ -10,7 +12,15 @@ export async function POST(
   if (!handler) {
     return new Response(`Unknown platform: ${platform}`, { status: 404 });
   }
-  return handler(request, {
-    waitUntil: (task) => after(() => task),
+
+  return await handler(request, {
+    waitUntil: (task) =>
+      after(async () => {
+        try {
+          await task;
+        } catch (error) {
+          console.error(`[webhooks:${platform}] background task failed`, error);
+        }
+      }),
   });
 }
