@@ -1,3 +1,5 @@
+import { readFile } from "fs/promises";
+import path from "path";
 import type { Adapter, Chat } from "chat";
 import { isAccessAllowed } from "./access-control";
 import { handleQuery } from "./agent-runtime";
@@ -11,6 +13,22 @@ import {
 import type { BotThread, BotThreadState, IncomingMessage } from "./types";
 
 type BotChat = Chat<Record<string, Adapter>, BotThreadState>;
+
+const TRIGGER_KEYWORD = "/testimage";
+
+async function handleTriggerCommand(thread: BotThread, message: IncomingMessage): Promise<boolean> {
+  // Strip leading @mention (e.g. "@BotName /testimage" → "/testimage")
+  const text = message.text?.trim().replace(/^@\S+\s*/, "").trim().toLowerCase();
+  if (text !== TRIGGER_KEYWORD) return false;
+
+  const imagePath = path.join(process.cwd(), "artifacts", "image.png");
+  const data = await readFile(imagePath);
+  await thread.post({
+    markdown: "Here's your test image!",
+    files: [{ data: Buffer.from(data), filename: "image.png", mimeType: "image/png" }],
+  });
+  return true;
+}
 
 function isClaudeProcessExitError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -74,6 +92,7 @@ async function handleFirstMessage(
   message: IncomingMessage,
 ): Promise<void> {
   if (!isAccessAllowed(thread, message)) return;
+  if (await handleTriggerCommand(thread, message)) return;
 
   await thread.subscribe();
   await markProcessingStart(thread, message);
@@ -106,6 +125,7 @@ async function handleSubscribedMessage(
 ): Promise<void> {
   if (message.author.isMe) return;
   if (!isAccessAllowed(thread, message)) return;
+  if (await handleTriggerCommand(thread, message)) return;
 
   await markProcessingStart(thread, message);
 

@@ -74,7 +74,7 @@ export async function handleQuery(
   const q = query({
     prompt,
     options: {
-      model: "sonnet",
+      model: "opus",
       systemPrompt: SYSTEM_PROMPT,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
