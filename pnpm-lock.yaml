@@ -12,14 +12,17 @@ importers:
         specifier: ^0.1.0
         version: 0.1.77(zod@4.3.6)
       '@chat-adapter/slack':
-        specifier: ^4.14.0
-        version: 4.14.0
+        specifier: ^4.15.0
+        version: 4.15.0
       '@chat-adapter/state-redis':
-        specifier: ^4.14.0
-        version: 4.14.0
+        specifier: ^4.15.0
+        version: 4.15.0
+      '@chat-adapter/telegram':
+        specifier: ^4.15.0
+        version: 4.15.0
       chat:
-        specifier: ^4.14.0
-        version: 4.14.0
+        specifier: ^4.15.0
+        version: 4.15.0
       next:
         specifier: 16.1.6
         version: 16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -134,14 +137,17 @@ packages:
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
 
-  '@chat-adapter/shared@4.14.0':
-    resolution: {integrity: sha512-D6OCFlO7g8Tvq6YJ06c0KkEtR4XKFx0FLCGV93AtRrww9mE9MBKEgeQwJosFRMt7y21n6XJK1n/BPZDnTveNZg==}
+  '@chat-adapter/shared@4.15.0':
+    resolution: {integrity: sha512-otIS9zf0wY3DMc5WGK1sOJiASSeMHcdEqmuxDWW/6tK7gdRE7FOVE+dfo/74ykj9QZwv+a9cByh1cimaeHbiAw==}
 
-  '@chat-adapter/slack@4.14.0':
-    resolution: {integrity: sha512-IJ0cJ3QC1f/inieA12VIhoJCap59kQbT4xovt52OU9WtTy4zGkxKIgEem7jA+KcbxeepoypmNIpTy8QSUMZBnQ==}
+  '@chat-adapter/slack@4.15.0':
+    resolution: {integrity: sha512-DE2puxMXitt2AVLBvMAldZ4KKUKpKWxSd62nWLDX6xXtOo6z9uXAggZD3FnMOGITqw+oQypdFopvm/Wu6OxeFg==}
 
-  '@chat-adapter/state-redis@4.14.0':
-    resolution: {integrity: sha512-JammJeUWsh14Lk6egFI05aVx9FHvcAmvOwpNw6HRh56vff54kfCeBt+S07FnTkd2FSNUy7Jvo4bnVGHjF+cUWg==}
+  '@chat-adapter/state-redis@4.15.0':
+    resolution: {integrity: sha512-156CGZCkMXzsnMC20nIpNkAGScbasOHxR9YcPMuLm2IwSC1L/Kyea7o9TEv2ldvk63q/e+AaU+98T7T5/2+mvg==}
+
+  '@chat-adapter/telegram@4.15.0':
+    resolution: {integrity: sha512-EMMPr3h86Xg1Pdj7BSXPmCI3umSHNx5TIHd23dNL5YG4cIb2mE1dMeVRSzgscLfWVh2We0JpPhjofSKPBt5G1Q==}
 
   '@emnapi/core@1.8.1':
     resolution: {integrity: sha512-AvT9QFpxK0Zd8J0jopedNm+w/2fIzvtPKPjqyw9jwvBaReTTqPBk9Hixaz7KbjimP+QNz605/XnjFcDAL2pqBg==}
@@ -990,8 +996,8 @@ packages:
   character-entities@2.0.2:
     resolution: {integrity: sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ==}
 
-  chat@4.14.0:
-    resolution: {integrity: sha512-gVod4FBptr4ewPEdY2zo1GnegI8/O0aC5F+IvFMIjimqmQjW0txhQbgI/DgmD48pwXJhxUGpvNrqzMrChx8GWw==}
+  chat@4.15.0:
+    resolution: {integrity: sha512-fE1m3UEiKQoiYkhXWT0rpH1+ZhKqJGZYkS+1gNCZWNkLv0QWTZhzdzBM5qYWe5A/Y0wJ8yLVjaqvGO4zZFxZqg==}
 
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
@@ -2486,25 +2492,32 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@chat-adapter/shared@4.14.0':
+  '@chat-adapter/shared@4.15.0':
     dependencies:
-      chat: 4.14.0
+      chat: 4.15.0
     transitivePeerDependencies:
       - supports-color
 
-  '@chat-adapter/slack@4.14.0':
+  '@chat-adapter/slack@4.15.0':
     dependencies:
-      '@chat-adapter/shared': 4.14.0
+      '@chat-adapter/shared': 4.15.0
       '@slack/web-api': 7.14.1
-      chat: 4.14.0
+      chat: 4.15.0
     transitivePeerDependencies:
       - debug
       - supports-color
 
-  '@chat-adapter/state-redis@4.14.0':
+  '@chat-adapter/state-redis@4.15.0':
     dependencies:
-      chat: 4.14.0
+      chat: 4.15.0
       redis: 4.7.1
+    transitivePeerDependencies:
+      - supports-color
+
+  '@chat-adapter/telegram@4.15.0':
+    dependencies:
+      '@chat-adapter/shared': 4.15.0
+      chat: 4.15.0
     transitivePeerDependencies:
       - supports-color
 
@@ -3292,7 +3305,7 @@ snapshots:
 
   character-entities@2.0.2: {}
 
-  chat@4.14.0:
+  chat@4.15.0:
     dependencies:
       '@workflow/serde': 4.1.0-beta.2
       mdast-util-to-string: 4.0.0

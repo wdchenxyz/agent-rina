@@ -1,36 +1,102 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Agent Rina
 
-## Getting Started
+Multi-platform AI bot powered by Chat SDK + Claude Agent SDK, supporting:
 
-First, run the development server:
+- Slack
+- Telegram
+
+## Architecture
+
+- Chat adapters: `lib/bot/index.ts`
+- Shared handlers: `lib/bot/handlers.ts`
+- Claude runtime/streaming: `lib/bot/agent-runtime.ts`
+- Webhook route: `app/api/webhooks/[platform]/route.ts`
+
+## Environment Variables
+
+Required for all modes:
+
+- `ANTHROPIC_API_KEY`
+- `REDIS_URL`
+
+Slack (optional, both required together):
+
+- `SLACK_BOT_TOKEN`
+- `SLACK_SIGNING_SECRET`
+
+Telegram (optional):
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_WEBHOOK_SECRET` (recommended)
+
+Optional:
+
+- `BOT_USERNAME` (default: `mybot`)
+- `BOT_ALLOWED_USER_IDS` (comma-separated user IDs)
+- `BOT_ALLOWED_CHAT_IDS` (comma-separated chat/channel IDs)
+- `BOT_ALLOWED_USER_IDS_SLACK` (comma-separated Slack user IDs)
+- `BOT_ALLOWED_USER_IDS_TELEGRAM` (comma-separated Telegram user IDs)
+- `BOT_ALLOWED_CHAT_IDS_SLACK` (comma-separated Slack channel IDs)
+- `BOT_ALLOWED_CHAT_IDS_TELEGRAM` (comma-separated Telegram chat IDs)
+- `CLAUDE_SDK_LOG_STDERR=1` (optional, logs Claude subprocess stderr for debugging)
+- `TELEGRAM_WEBHOOK_URL` (for webhook registration convenience)
+
+Allowlist behavior:
+
+- Per-platform vars take precedence when set (`*_SLACK`, `*_TELEGRAM`).
+- Global vars are fallback when platform-specific vars are unset.
+- User and chat checks are both applied: if both relevant lists are set, both must match.
+- If all relevant lists are unset: allow all.
+
+If neither Slack nor Telegram env vars are configured, startup fails with a clear error.
+
+## Local Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Server runs on `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Webhook endpoints:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Slack: `POST /api/webhooks/slack`
+- Telegram: `POST /api/webhooks/telegram`
 
-## Learn More
+## Telegram Setup
 
-To learn more about Next.js, take a look at the following resources:
+Telegram requires a public HTTPS webhook URL. For local development, expose your local server with a tunnel (for example ngrok or cloudflared) and set:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `TELEGRAM_WEBHOOK_URL=https://<public-url>/api/webhooks/telegram`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Then register webhook:
 
-## Deploy on Vercel
+```bash
+curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -d "url=$TELEGRAM_WEBHOOK_URL" \
+  -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Detailed guide: `docs/telegram-setup.md`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Platform Behavior
+
+Slack:
+
+- Responds to mentions in new threads
+- Subscribes thread and handles follow-up messages
+- Uses reaction indicators (`eyes`, `check`)
+
+Telegram:
+
+- Responds to mentions in groups/supergroups
+- Responds to direct messages via `onNewMessage` fallback handler
+- Uses same per-thread Claude session resume logic
+
+## Verification
+
+```bash
+pnpm lint
+pnpm build
+```
