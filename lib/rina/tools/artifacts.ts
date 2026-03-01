@@ -150,5 +150,76 @@ export function createArtifactTools(thread: BotThread) {
     },
   });
 
-  return { listArtifacts, uploadArtifact };
+  const downloadFile = tool({
+    description:
+      "Download a file from a URL and save it to the artifacts/ directory. " +
+      "Use this to download images, PDFs, or other files from the web. " +
+      "The bash sandbox cannot access the network, so always use this tool instead of curl/wget/fetch in bash. " +
+      `Supported formats: ${SUPPORTED_LIST}. Max size: 8 MB.`,
+    inputSchema: z.object({
+      url: z.string().url().describe("The URL to download the file from"),
+      filename: z
+        .string()
+        .describe(
+          "Filename to save as inside artifacts/, e.g. 'cute_cat.jpg' or 'chart.png'",
+        ),
+    }),
+    execute: async ({ url, filename }) => {
+      // Validate filename extension
+      const ext = path.extname(filename).slice(1).toLowerCase();
+      if (!ext) {
+        return "Filename must have an extension (e.g. .jpg, .png, .pdf).";
+      }
+      const mimeType = ALLOWED_EXTENSIONS[ext];
+      if (!mimeType) {
+        return `Unsupported file format: .${ext}. Supported: ${SUPPORTED_LIST}.`;
+      }
+
+      // Guard path
+      let resolved: string;
+      try {
+        resolved = guardPath(filename);
+      } catch {
+        return "Invalid filename — must be inside artifacts/.";
+      }
+
+      // Ensure parent directory exists
+      const dir = path.dirname(resolved);
+      await fs.mkdir(dir, { recursive: true });
+
+      // Download the file
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (compatible; RinaBot/1.0; +https://github.com)",
+          },
+          redirect: "follow",
+        });
+      } catch (err) {
+        return `Download failed: ${err instanceof Error ? err.message : "network error"}`;
+      }
+
+      if (!response.ok) {
+        return `Download failed: HTTP ${response.status} ${response.statusText}`;
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      if (buffer.length === 0) {
+        return "Download failed: received empty response.";
+      }
+
+      if (buffer.length > MAX_UPLOAD_BYTES) {
+        return `File too large (${(buffer.length / (1024 * 1024)).toFixed(1)} MB). Max is 8 MB.`;
+      }
+
+      await fs.writeFile(resolved, buffer);
+
+      return `Downloaded ${filename} (${(buffer.length / 1024).toFixed(1)} KB) to artifacts/. Use uploadArtifact to share it in chat.`;
+    },
+  });
+
+  return { listArtifacts, uploadArtifact, downloadFile };
 }

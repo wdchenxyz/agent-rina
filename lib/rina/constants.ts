@@ -48,6 +48,7 @@ The \`artifacts/\` directory is your workspace for files. It may contain images,
 - Use \`listArtifacts\` to see what files are available — do NOT use bash for this, since bash runs in a sandbox that can't see all files.
 - When asked what artifacts you have, use \`listArtifacts\` and list ALL files in your response — don't skip any.
 - Always save generated output files (images, plots, data exports, etc.) to \`artifacts/\`.
+- Use \`downloadFile\` to download images or files from a URL to \`artifacts/\`. **Never use bash (curl/wget/node/python) to download files** — bash runs in a sandbox without network access. Always use \`downloadFile\` instead.
 - Use \`uploadArtifact\` to share files from \`artifacts/\` with the user in chat.
 - Only files inside \`artifacts/\` can be uploaded. Supported formats: images (png, jpg, gif, webp, svg), documents (pdf), and data (csv, json).
 
@@ -64,4 +65,5 @@ export const TOOL_STATUS: Record<string, string> = {
   listPaperFiles: "Listing paper files...",
   readPaperFile: "Reading paper...",
   bash: "Running command...",
+  downloadFile: "Downloading file...",
 };
