@@ -1,9 +1,31 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { AGENTS, SYSTEM_PROMPT, TOOL_STATUS } from "./constants";
 import { uploadImageLinksFromResponse } from "./message-output";
+import { createArxivTools } from "./tools/arxiv";
 import type { BotThread, QueryPrompt } from "./types";
 
 const RETRY_DELAYS_MS = [400, 1200, 2500];
+const TELEGRAM_MAX_LENGTH = 4000;
+
+function splitLongText(text: string): string[] {
+  if (text.length <= TELEGRAM_MAX_LENGTH) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > TELEGRAM_MAX_LENGTH) {
+    const slice = remaining.slice(0, TELEGRAM_MAX_LENGTH);
+    // Split at last paragraph boundary (\n\n), or last newline, or hard cut
+    let splitAt = slice.lastIndexOf("\n\n");
+    if (splitAt < TELEGRAM_MAX_LENGTH / 2) splitAt = slice.lastIndexOf("\n");
+    if (splitAt < TELEGRAM_MAX_LENGTH / 2) splitAt = TELEGRAM_MAX_LENGTH;
+    chunks.push(remaining.slice(0, splitAt).trimEnd());
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+
+  if (remaining.trim().length > 0) chunks.push(remaining);
+  return chunks;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -62,7 +84,7 @@ async function postWithRetry(
 export async function handleQuery(
   thread: BotThread,
   prompt: QueryPrompt,
-  opts: { resume?: string } = {},
+  opts: { resume?: string; prelude?: string } = {},
 ): Promise<string | undefined> {
   let sessionId: string | undefined;
   let fullResponseText = "";
@@ -71,14 +93,56 @@ export async function handleQuery(
     process.env.CLAUDE_SDK_LOG_STDERR === "1" ||
     process.env.DEBUG_CLAUDE_AGENT_SDK === "1";
 
+  const arxivMcp = createArxivTools(thread);
+  const prelude = opts.prelude?.trim();
+
+  const createTextMessage = (text: string) => ({
+    type: "user" as const,
+    parent_tool_use_id: null,
+    message: { role: "user" as const, content: text },
+  });
+
+  // Wrap string prompt as async generator when MCP servers are present
+  // (SDK requires AsyncIterable<SDKUserMessage> for custom MCP tools)
+  let sdkPrompt: QueryPrompt;
+  if (typeof prompt === "string") {
+    async function* wrapString() {
+      if (prelude) {
+        yield createTextMessage(prelude);
+      }
+      yield createTextMessage(prompt as string);
+    }
+    sdkPrompt = wrapString() as unknown as QueryPrompt;
+  } else if (prelude) {
+    const preludeText = prelude;
+    async function* prependPrelude() {
+      yield createTextMessage(preludeText);
+      for await (const item of prompt as AsyncIterable<Record<string, unknown>>) {
+        yield item;
+      }
+    }
+    sdkPrompt = prependPrelude() as unknown as QueryPrompt;
+  } else {
+    sdkPrompt = prompt;
+  }
+
   const q = query({
-    prompt,
+    prompt: sdkPrompt,
     options: {
       model: "opus",
       systemPrompt: SYSTEM_PROMPT,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
-      allowedTools: ["WebSearch", "WebFetch", "Task"],
+      allowedTools: [
+        "WebSearch",
+        "WebFetch",
+        "Task",
+        "mcp__arxiv__download_arxiv_source",
+        "mcp__arxiv__list_paper_files",
+        "mcp__arxiv__read_paper_file",
+        "mcp__arxiv__upload_paper_figure",
+      ],
+      mcpServers: { arxiv: arxivMcp },
       agents: AGENTS,
       maxTurns: 20,
       includePartialMessages: true,
@@ -169,7 +233,9 @@ export async function handleQuery(
       if (streamText) {
         await endTextStream();
       } else if (currentTextBlock.trim().length > 0) {
-        await postWithRetry(thread, currentTextBlock);
+        for (const part of splitLongText(currentTextBlock)) {
+          await postWithRetry(thread, part);
+        }
       }
       inTextBlock = false;
     }
@@ -189,7 +255,9 @@ export async function handleQuery(
     if (streamText) {
       await endTextStream();
     } else if (currentTextBlock.trim().length > 0) {
-      await postWithRetry(thread, currentTextBlock);
+      for (const part of splitLongText(currentTextBlock)) {
+        await postWithRetry(thread, part);
+      }
     }
   }
   await uploadImageLinksFromResponse(thread, fullResponseText);

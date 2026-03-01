@@ -4,6 +4,7 @@ import type { Adapter, Chat } from "chat";
 import { isAccessAllowed } from "./access-control";
 import { handleQuery } from "./agent-runtime";
 import { buildPromptFromMessage } from "./message-input";
+import { buildDigestContextPrelude, getDigestThreadContext } from "./news/context";
 import {
   clearProcessingIndicator,
   isTelegramDirectMessage,
@@ -42,7 +43,7 @@ function isClaudeProcessExitError(error: unknown): boolean {
 async function runAssistant(
   thread: BotThread,
   message: IncomingMessage,
-  opts: { resume?: string } = {},
+  opts: { resume?: string; prelude?: string } = {},
 ): Promise<void> {
   const { prompt, warnings } = await buildPromptFromMessage(message);
   if (warnings.length > 0) {
@@ -56,14 +57,17 @@ async function runAssistant(
 }
 
 async function runAssistantWithResumeFallback(
+  bot: BotChat,
   thread: BotThread,
   message: IncomingMessage,
 ): Promise<void> {
   const state = await thread.state;
   const resume = state?.sdkSessionId;
+  const digestContext = await getDigestThreadContext(bot.getState(), thread.id);
+  const prelude = digestContext ? buildDigestContextPrelude(digestContext) : undefined;
 
   if (!resume) {
-    await runAssistant(thread, message);
+    await runAssistant(thread, message, { prelude });
     return;
   }
 
@@ -83,7 +87,7 @@ async function runAssistantWithResumeFallback(
     await thread.post(
       "> I couldn't resume the previous session context, so I started a new one.",
     );
-    await runAssistant(thread, message);
+    await runAssistant(thread, message, { prelude });
   }
 }
 
@@ -120,6 +124,7 @@ async function handleFirstMessage(
 }
 
 async function handleSubscribedMessage(
+  bot: BotChat,
   thread: BotThread,
   message: IncomingMessage,
 ): Promise<void> {
@@ -131,7 +136,7 @@ async function handleSubscribedMessage(
 
   let success = false;
   try {
-    await runAssistantWithResumeFallback(thread, message);
+    await runAssistantWithResumeFallback(bot, thread, message);
     success = true;
   } catch (error) {
     console.error(
@@ -160,7 +165,7 @@ export function registerBotHandlers(bot: BotChat): void {
   });
 
   bot.onSubscribedMessage(async (thread, message) => {
-    await handleSubscribedMessage(thread, message);
+    await handleSubscribedMessage(bot, thread, message);
   });
 
   bot.onNewMessage(/[\s\S]*/, async (thread, message) => {

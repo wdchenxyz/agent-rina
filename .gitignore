@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# arxiv paper sources
+artifacts/papers/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
