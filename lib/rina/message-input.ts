@@ -110,6 +110,17 @@ async function attachmentToMediaPart(
 // buildPromptFromMessage — current message → UserContent
 // ---------------------------------------------------------------------------
 
+/** Build a short `[user: @handle (ID)]` prefix from a message author. */
+function authorPrefix(author: IncomingMessage["author"]): string {
+  if (!author || author.isMe) return "";
+  const name = author.userName || author.fullName || "";
+  const id = author.userId ?? "";
+  if (name && id) return `[user: @${name} (${id})] `;
+  if (id) return `[user: ${id}] `;
+  if (name) return `[user: @${name}] `;
+  return "";
+}
+
 /**
  * Convert an incoming chat message into AI SDK prompt content.
  * Supports image, PDF, and plain-text attachments.
@@ -117,7 +128,8 @@ async function attachmentToMediaPart(
 export async function buildPromptFromMessage(
   message: IncomingMessage,
 ): Promise<{ content: UserContent; warnings: string[] }> {
-  const text = message.text?.trim() ?? "";
+  const prefix = authorPrefix(message.author);
+  const text = (prefix + (message.text?.trim() ?? "")).trim();
   const supportedAttachments = (message.attachments ?? []).filter((a) =>
     isSupportedMime(a.mimeType) || a.type === "image",
   );
@@ -267,6 +279,8 @@ export async function convertThreadHistory(
     } else {
       // Other users' messages → user role with optional media
       const mediaParts = await extractMediaParts(msg);
+      const prefix = authorPrefix(msg.author);
+      const labeledText = (prefix + text).trim();
 
       console.log(
         `[rina:image-debug]   -> user msg added with ${mediaParts.length} file(s)`,
@@ -276,14 +290,14 @@ export async function convertThreadHistory(
         history.push({
           role: "user",
           content: [
-            { type: "text", text: text || "See attached file(s)." },
+            { type: "text", text: labeledText || "See attached file(s)." },
             ...mediaParts,
           ],
         });
       } else {
         history.push({
           role: "user",
-          content: text || "(empty message)",
+          content: labeledText || "(empty message)",
         });
       }
     }

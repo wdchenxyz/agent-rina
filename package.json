@@ -13,6 +13,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.50",
     "@ai-sdk/google": "^3.0.34",
+    "@ai-sdk/openai": "^3.0.37",
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
     "@chat-adapter/slack": "^4.15.0",
     "@chat-adapter/state-redis": "^4.15.0",

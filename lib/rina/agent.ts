@@ -1,4 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
+import { openai } from "@ai-sdk/openai";
 import {
   ToolLoopAgent,
   stepCountIs,
@@ -9,6 +10,7 @@ import {
 import { resolve } from "path";
 
 import { SYSTEM_PROMPT, TOOL_STATUS } from "./constants";
+import type { ThreadLogger } from "./logger";
 import { createArtifactTools } from "./tools/artifacts";
 import { createArxivTools } from "./tools/arxiv";
 import { webTools } from "./tools/web";
@@ -137,6 +139,59 @@ interface StreamPart {
   toolName?: string;
 }
 
+// --- Stream logging wrapper ---
+// Taps into the stream to log tool calls, results, and text blocks without
+// altering what downstream consumers (streamToChat / bufferToChat) see.
+
+async function* withLogging(
+  stream: AsyncIterable<StreamPart>,
+  logger: ThreadLogger,
+): AsyncGenerator<StreamPart> {
+  let currentToolName = "";
+  let toolInputChunks: string[] = [];
+  let textChunks: string[] = [];
+
+  for await (const part of stream) {
+    // Tool input tracking
+    if (part.type === "tool-input-start") {
+      currentToolName = part.toolName ?? "unknown";
+      toolInputChunks = [];
+    }
+    if (part.type === "tool-input-delta" && part.text) {
+      toolInputChunks.push(part.text);
+    }
+    if (part.type === "tool-input-end") {
+      logger.logToolCall(currentToolName, toolInputChunks.join(""));
+    }
+
+    // Tool result
+    if (part.type === "tool-result") {
+      const raw = (part as StreamPart & { result?: unknown }).result;
+      const output =
+        typeof raw === "string"
+          ? raw
+          : raw === undefined
+            ? "(no output)"
+            : JSON.stringify(raw, null, 2) ?? "(unserializable)";
+      logger.logToolResult(currentToolName, output);
+    }
+
+    // Text block tracking
+    if (part.type === "text-start") {
+      textChunks = [];
+    }
+    if (part.type === "text-delta" && part.text) {
+      textChunks.push(part.text);
+    }
+    if (part.type === "text-end") {
+      const full = textChunks.join("");
+      if (full.trim()) logger.logResponse(full);
+    }
+
+    yield part;
+  }
+}
+
 // --- Streaming response (Slack) ---
 // Pipes text chunks to thread.post(asyncIterable) for real-time streaming.
 
@@ -248,9 +303,10 @@ async function bufferToChat(
 export async function handleQuery(
   thread: BotThread,
   content: UserContent,
-  opts: { prelude?: string; history?: ModelMessage[] } = {},
+  opts: { prelude?: string; history?: ModelMessage[]; logger?: ThreadLogger } = {},
 ): Promise<void> {
   const shouldStream = thread.adapter.name !== "telegram";
+  const { logger } = opts;
 
   // Build tools
   const arxivTools = createArxivTools(thread);
@@ -264,7 +320,8 @@ export async function handleQuery(
   } as ToolSet;
 
   const agent = new ToolLoopAgent({
-    model: anthropic("claude-sonnet-4-6"),
+    // model: anthropic("claude-sonnet-4-6"),
+    model: openai("gpt-5.2"),
     instructions: SYSTEM_PROMPT,
     tools: allTools,
     stopWhen: stepCountIs(MAX_STEPS),
@@ -289,14 +346,20 @@ export async function handleQuery(
     }
   }
 
+  // Log the full prompt sent to the agent
+  logger?.logPrompt(messages);
+
   const result = await agent.stream({ messages });
 
   // Cast fullStream to simplified type to avoid deep generics issues
-  const stream = result.fullStream as unknown as AsyncIterable<StreamPart>;
+  const rawStream = result.fullStream as unknown as AsyncIterable<StreamPart>;
+  const stream = logger ? withLogging(rawStream, logger) : rawStream;
 
   if (shouldStream) {
     await streamToChat(stream, thread);
   } else {
     await bufferToChat(stream, thread);
   }
+
+  await logger?.flush();
 }

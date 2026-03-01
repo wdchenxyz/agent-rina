@@ -1,6 +1,7 @@
 import type { Adapter, Chat } from "chat";
 import { isAccessAllowed } from "./access-control";
 import { handleQuery } from "./agent";
+import { ThreadLogger } from "./logger";
 import {
   buildPromptFromMessage,
   convertThreadHistory,
@@ -51,9 +52,14 @@ async function ensureAttachments(
 async function runAssistant(
   thread: BotThread,
   message: IncomingMessage,
-  opts: { prelude?: string; history?: import("ai").ModelMessage[] } = {},
+  opts: {
+    prelude?: string;
+    history?: import("ai").ModelMessage[];
+    logger?: ThreadLogger;
+  } = {},
 ): Promise<void> {
   const enriched = await ensureAttachments(thread, message);
+  opts.logger?.logIncoming(enriched);
   const { content, warnings } = await buildPromptFromMessage(enriched);
   if (warnings.length > 0) {
     await thread.post({ markdown: warnings.map((w) => `> ${w}`).join("\n") });
@@ -67,12 +73,15 @@ async function handleFirstMessage(
 ): Promise<void> {
   if (!isAccessAllowed(thread, message)) return;
 
+  const logger = new ThreadLogger(thread.adapter.name, thread.id);
+  logger.logSeparator(message.id);
+
   await thread.subscribe();
   await markProcessingStart(thread, message);
 
   let success = false;
   try {
-    await runAssistant(thread, message);
+    await runAssistant(thread, message, { logger });
     success = true;
   } catch (error) {
     console.error(
@@ -104,6 +113,9 @@ async function handleSubscribedMessage(
   if (message.author.isMe) return;
   if (!isAccessAllowed(thread, message)) return;
 
+  const logger = new ThreadLogger(thread.adapter.name, thread.id);
+  logger.logSeparator(message.id);
+
   await markProcessingStart(thread, message);
 
   // Fetch thread history and digest context in parallel
@@ -111,13 +123,14 @@ async function handleSubscribedMessage(
     convertThreadHistory(thread, message.id),
     getDigestThreadContext(bot.getState(), thread.id),
   ]);
+  logger.logHistory(history);
   const prelude = digestContext
     ? buildDigestContextPrelude(digestContext)
     : undefined;
 
   let success = false;
   try {
-    await runAssistant(thread, message, { prelude, history });
+    await runAssistant(thread, message, { prelude, history, logger });
     success = true;
   } catch (error) {
     console.error(
