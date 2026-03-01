@@ -19,12 +19,42 @@ import type { BotThread, BotThreadState, IncomingMessage } from "./types";
 
 type BotChat = Chat<Record<string, Adapter>, BotThreadState>;
 
+/**
+ * Slack's `app_mention` events don't include file attachments, but often win
+ * the dedup race against the `message` event (which does include files).
+ * When the incoming message has no attachments, re-fetch it from the platform
+ * to pick up any files that were dropped.
+ */
+async function ensureAttachments(
+  thread: BotThread,
+  message: IncomingMessage,
+): Promise<IncomingMessage> {
+  if (message.attachments && message.attachments.length > 0) {
+    return message;
+  }
+
+  try {
+    const fetched = await thread.adapter.fetchMessage?.(thread.id, message.id);
+    if (fetched && fetched.attachments && fetched.attachments.length > 0) {
+      console.log(
+        `[rina] Re-fetched message ${message.id}: found ${fetched.attachments.length} attachment(s) missing from original event`,
+      );
+      return fetched as IncomingMessage;
+    }
+  } catch (err) {
+    console.warn(`[rina] Failed to re-fetch message ${message.id}:`, err);
+  }
+
+  return message;
+}
+
 async function runAssistant(
   thread: BotThread,
   message: IncomingMessage,
   opts: { prelude?: string; history?: import("ai").ModelMessage[] } = {},
 ): Promise<void> {
-  const { content, warnings } = await buildPromptFromMessage(message);
+  const enriched = await ensureAttachments(thread, message);
+  const { content, warnings } = await buildPromptFromMessage(enriched);
   if (warnings.length > 0) {
     await thread.post({ markdown: warnings.map((w) => `> ${w}`).join("\n") });
   }

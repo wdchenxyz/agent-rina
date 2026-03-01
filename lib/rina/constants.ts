@@ -32,7 +32,8 @@ To find the arxiv paper ID from a name, use webSearch to search for it on arxiv 
 
 ## Artifacts
 The \`artifacts/\` directory is your workspace for files. It may contain images, data exports, papers, and other files.
-- When asked what artifacts you have, list ALL files comprehensively using \`find artifacts/ -type f\` — don't skip any.
+- Use \`listArtifacts\` to see what files are available — do NOT use bash for this, since bash runs in a sandbox that can't see all files.
+- When asked what artifacts you have, use \`listArtifacts\` and list ALL files in your response — don't skip any.
 - Always save generated output files (images, plots, data exports, etc.) to \`artifacts/\`.
 - Use \`uploadArtifact\` to share files from \`artifacts/\` with the user in chat.
 - Only files inside \`artifacts/\` can be uploaded. Supported formats: images (png, jpg, gif, webp, svg), documents (pdf), and data (csv, json).

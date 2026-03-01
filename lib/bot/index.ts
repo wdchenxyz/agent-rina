@@ -47,4 +47,4 @@ export const bot = new Chat<Record<string, Adapter>, BotThreadState>({
 });
 
 registerHandlers(bot);
-startNewsScheduler(bot);
+// startNewsScheduler(bot);

@@ -105,6 +105,18 @@ async function loadBashAndSkillTools(): Promise<Record<string, unknown>> {
     },
     files: skillFiles,
     extraInstructions: skillInstructions,
+    onBeforeBashCall: ({ command }) => {
+      console.log(`[rina] bash: ${command}`);
+      return undefined;
+    },
+    onAfterBashCall: ({ command, result }) => {
+      if (result.exitCode !== 0) {
+        console.log(
+          `[rina] bash exit ${result.exitCode}: ${command}\n  stderr: ${result.stderr.slice(0, 200)}`,
+        );
+      }
+      return undefined;
+    },
   });
 
   return { ...bashTools, skill };
@@ -264,6 +276,18 @@ export async function handleQuery(
     messages.push({ role: "user", content: opts.prelude });
   }
   messages.push({ role: "user", content });
+
+  // Debug: log message structure
+  console.log(`[rina:image-debug] handleQuery: ${messages.length} messages total`);
+  for (const [i, msg] of messages.entries()) {
+    if (typeof msg.content === "string") {
+      console.log(`[rina:image-debug]   [${i}] role=${msg.role}, content="${msg.content.slice(0, 80)}"`);
+    } else if (Array.isArray(msg.content)) {
+      const textParts = msg.content.filter((p: { type: string }) => p.type === "text").length;
+      const imageParts = msg.content.filter((p: { type: string }) => p.type === "image").length;
+      console.log(`[rina:image-debug]   [${i}] role=${msg.role}, parts: ${textParts} text + ${imageParts} image`);
+    }
+  }
 
   const result = await agent.stream({ messages });
 

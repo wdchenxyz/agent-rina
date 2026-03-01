@@ -46,6 +46,15 @@ export async function buildPromptFromMessage(
     (a) => a.type === "image",
   );
 
+  console.log(
+    `[rina:image-debug] buildPromptFromMessage: text="${text}", total attachments=${message.attachments?.length ?? 0}, image attachments=${imageAttachments.length}`,
+  );
+  for (const att of imageAttachments) {
+    console.log(
+      `[rina:image-debug]   attachment: name=${att.name}, mimeType=${att.mimeType}, url=${att.url?.slice(0, 80)}...`,
+    );
+  }
+
   if (imageAttachments.length === 0) {
     return { content: text || "Hello", warnings: [] };
   }
@@ -61,9 +70,13 @@ export async function buildPromptFromMessage(
     try {
       const data = await readAttachmentData(attachment);
       if (!data) {
+        console.log(`[rina:image-debug]   image #${index + 1}: fetchData returned null`);
         warnings.push(`Couldn't read image #${index + 1}; skipped it.`);
         continue;
       }
+      console.log(
+        `[rina:image-debug]   image #${index + 1}: downloaded ${data.length} bytes, name=${attachment.name}`,
+      );
       if (data.length > MAX_INBOUND_IMAGE_BYTES) {
         warnings.push(
           `Image #${index + 1} is larger than ${MAX_INBOUND_IMAGE_BYTES / (1024 * 1024)}MB; skipped it.`,
@@ -81,7 +94,8 @@ export async function buildPromptFromMessage(
         image: data,
         mediaType: mimeType,
       });
-    } catch {
+    } catch (err) {
+      console.error(`[rina:image-debug]   image #${index + 1}: error downloading`, err);
       warnings.push(`Couldn't process image #${index + 1}; skipped it.`);
     }
   }
@@ -157,15 +171,43 @@ export async function convertThreadHistory(
     const text = msg.text?.trim() ?? "";
     if (!text && (!msg.attachments || msg.attachments.length === 0)) continue;
 
+    console.log(
+      `[rina:image-debug] history msg: id=${msg.id}, isMe=${msg.author.isMe}, text="${text.slice(0, 60)}", attachments=${msg.attachments?.length ?? 0}, imageAttachments=${(msg.attachments ?? []).filter((a) => a.type === "image").length}`,
+    );
+
     if (msg.author.isMe) {
-      // Bot's own messages → assistant role (text only, since the platform
-      // only stores the bot's final text output, not tool calls)
+      // Bot's own messages → assistant role (text only, since the AI SDK
+      // doesn't support images in assistant content).
       if (text) {
         history.push({ role: "assistant", content: text });
+      }
+
+      // When the bot posted images (e.g. via uploadArtifact), inject a
+      // synthetic user message so the model can "see" what it uploaded.
+      // This is necessary because users may refer back to these images.
+      const botImageParts = await extractImageParts(msg);
+      if (botImageParts.length > 0) {
+        console.log(
+          `[rina:image-debug]   -> bot msg has ${botImageParts.length} image(s), injecting as user context`,
+        );
+        history.push({
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "[This is the image you just posted to the chat.]",
+            },
+            ...botImageParts,
+          ],
+        });
       }
     } else {
       // Other users' messages → user role with optional images
       const imageParts = await extractImageParts(msg);
+
+      console.log(
+        `[rina:image-debug]   -> user msg added with ${imageParts.length} image(s)`,
+      );
 
       if (imageParts.length > 0) {
         history.push({
@@ -184,5 +226,39 @@ export async function convertThreadHistory(
     }
   }
 
-  return history;
+  // Anthropic requires strictly alternating user/assistant roles.
+  // Merge consecutive same-role messages to avoid API errors (e.g. when a
+  // synthetic user image message is followed by a real user message).
+  const merged: ModelMessage[] = [];
+  for (const msg of history) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.role === msg.role && prev.role === "user") {
+      // Normalise both contents to part arrays and concatenate
+      const prevParts: Array<TextPart | ImagePart> =
+        typeof prev.content === "string"
+          ? [{ type: "text" as const, text: prev.content }]
+          : (prev.content as Array<TextPart | ImagePart>);
+      const curParts: Array<TextPart | ImagePart> =
+        typeof msg.content === "string"
+          ? [{ type: "text" as const, text: msg.content }]
+          : (msg.content as Array<TextPart | ImagePart>);
+      prev.content = [...prevParts, ...curParts];
+    } else if (prev && prev.role === msg.role && prev.role === "assistant") {
+      // Merge consecutive assistant text messages
+      const prevText = typeof prev.content === "string"
+        ? prev.content
+        : "";
+      const curText = typeof msg.content === "string"
+        ? msg.content
+        : "";
+      prev.content = [prevText, curText].filter(Boolean).join("\n\n");
+    } else {
+      merged.push({ ...msg });
+    }
+  }
+
+  console.log(
+    `[rina:image-debug] convertThreadHistory: ${merged.length} messages total (${history.length} before merge)`,
+  );
+  return merged;
 }

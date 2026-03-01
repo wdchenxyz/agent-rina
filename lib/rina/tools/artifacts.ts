@@ -39,9 +39,66 @@ function guardPath(filePath: string): string {
 }
 
 /**
- * Creates tools for uploading files from the artifacts/ directory to chat.
+ * Recursively list all files under a directory, returning paths relative to `base`.
+ */
+async function recursiveList(dir: string, base: string): Promise<string[]> {
+  let names: string[];
+  try {
+    names = await fs.readdir(dir);
+  } catch {
+    return [];
+  }
+  const results: string[] = [];
+  for (const name of names) {
+    const full = path.join(dir, name);
+    const stat = await fs.stat(full).catch(() => null);
+    if (!stat) continue;
+    if (stat.isDirectory()) {
+      results.push(...(await recursiveList(full, base)));
+    } else {
+      results.push(path.relative(base, full));
+    }
+  }
+  return results;
+}
+
+/**
+ * Creates tools for listing and uploading files from the artifacts/ directory.
  */
 export function createArtifactTools(thread: BotThread) {
+  const listArtifacts = tool({
+    description:
+      "List all files in the artifacts/ directory. " +
+      "Use this to see what files are available before uploading.",
+    inputSchema: z.object({
+      subpath: z
+        .string()
+        .optional()
+        .describe(
+          "Optional subdirectory to list, relative to artifacts/. " +
+          "Omit to list everything.",
+        ),
+    }),
+    execute: async ({ subpath }) => {
+      let target: string;
+      try {
+        target = subpath ? guardPath(subpath) : ARTIFACTS_DIR;
+      } catch {
+        return "Invalid path — must be inside artifacts/.";
+      }
+
+      const files = await recursiveList(target, ARTIFACTS_DIR);
+
+      if (files.length === 0) {
+        return subpath
+          ? `No files found in artifacts/${subpath}.`
+          : "The artifacts/ directory is empty.";
+      }
+
+      return files.join("\n");
+    },
+  });
+
   const uploadArtifact = tool({
     description:
       "Upload a file from the artifacts/ directory to the chat. " +
@@ -93,5 +150,5 @@ export function createArtifactTools(thread: BotThread) {
     },
   });
 
-  return { uploadArtifact };
+  return { listArtifacts, uploadArtifact };
 }

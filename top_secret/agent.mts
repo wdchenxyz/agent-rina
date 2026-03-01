@@ -7,8 +7,9 @@ import { ToolLoopAgent, stepCountIs, tool, generateText } from "ai";
 import { z } from "zod";
 import { resolve } from "path";
 import { anthropic } from "@ai-sdk/anthropic";
+import { arxivTools } from "./tools/arxiv.mts";
 
-const SYSTEM_PROMPT = `You are a capable AI agent that can search the web, read webpages, execute bash commands in a sandbox, and load skills for specialized tasks.
+const SYSTEM_PROMPT = `You are a capable AI agent that can search the web, read webpages, execute bash commands in a sandbox, load skills, and research arxiv papers.
 
 Guidelines:
 - Use webSearch to find current information on the web.
@@ -16,6 +17,7 @@ Guidelines:
 - Use bash to explore files, run commands, and process data in the sandbox.
 - Use readFile/writeFile for direct file access in the sandbox.
 - Use skill to load specialized instructions when a task matches an available skill.
+- For arxiv papers: use downloadArxivSource to get LaTeX source, listPaperFiles to see contents, and readPaperFile to read individual files.
 - Be concise and direct in your responses.`;
 
 // Web search tool: internally calls Gemini with google_search grounding
@@ -107,6 +109,7 @@ async function main() {
     instructions: SYSTEM_PROMPT,
     tools: {
       ...bashTools,
+      ...arxivTools,
       skill,
       webSearch,
       fetchWebpage,
