@@ -84,7 +84,7 @@ async function postWithRetry(
 export async function handleQuery(
   thread: BotThread,
   prompt: QueryPrompt,
-  opts: { resume?: string } = {},
+  opts: { resume?: string; prelude?: string } = {},
 ): Promise<string | undefined> {
   let sessionId: string | undefined;
   let fullResponseText = "";
@@ -94,19 +94,34 @@ export async function handleQuery(
     process.env.DEBUG_CLAUDE_AGENT_SDK === "1";
 
   const arxivMcp = createArxivTools(thread);
+  const prelude = opts.prelude?.trim();
+
+  const createTextMessage = (text: string) => ({
+    type: "user" as const,
+    parent_tool_use_id: null,
+    message: { role: "user" as const, content: text },
+  });
 
   // Wrap string prompt as async generator when MCP servers are present
   // (SDK requires AsyncIterable<SDKUserMessage> for custom MCP tools)
   let sdkPrompt: QueryPrompt;
   if (typeof prompt === "string") {
     async function* wrapString() {
-      yield {
-        type: "user" as const,
-        parent_tool_use_id: null,
-        message: { role: "user" as const, content: prompt as string },
-      };
+      if (prelude) {
+        yield createTextMessage(prelude);
+      }
+      yield createTextMessage(prompt as string);
     }
     sdkPrompt = wrapString() as unknown as QueryPrompt;
+  } else if (prelude) {
+    const preludeText = prelude;
+    async function* prependPrelude() {
+      yield createTextMessage(preludeText);
+      for await (const item of prompt as AsyncIterable<Record<string, unknown>>) {
+        yield item;
+      }
+    }
+    sdkPrompt = prependPrelude() as unknown as QueryPrompt;
   } else {
     sdkPrompt = prompt;
   }
