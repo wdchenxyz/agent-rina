@@ -2,7 +2,7 @@ import { createSlackAdapter } from "@chat-adapter/slack";
 import { createRedisState } from "@chat-adapter/state-redis";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { Chat, type Adapter } from "chat";
-import { registerBotHandlers } from "./handlers";
+import { registerHandlers } from "../rina";
 import { startNewsScheduler } from "./news/scheduler";
 import type { BotThreadState } from "./types";
 
@@ -46,5 +46,5 @@ export const bot = new Chat<Record<string, Adapter>, BotThreadState>({
   state: createRedisState(),
 });
 
-registerBotHandlers(bot);
+registerHandlers(bot);
 startNewsScheduler(bot);
