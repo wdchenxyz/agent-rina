@@ -1,7 +1,11 @@
 const MAX_MEGABYTE = 1024 * 1024;
 
-export const MAX_INBOUND_IMAGES = 4;
+export const MAX_INBOUND_ATTACHMENTS = 4;
 export const MAX_INBOUND_IMAGE_BYTES = 5 * MAX_MEGABYTE;
+export const MAX_INBOUND_FILE_BYTES = 10 * MAX_MEGABYTE;
+
+/** @deprecated Use MAX_INBOUND_ATTACHMENTS instead */
+export const MAX_INBOUND_IMAGES = MAX_INBOUND_ATTACHMENTS;
 
 export const IMAGE_EXT_TO_MIME: Record<string, string> = {
   png: "image/png",
@@ -14,6 +18,15 @@ export const IMAGE_EXT_TO_MIME: Record<string, string> = {
   tiff: "image/tiff",
   svg: "image/svg+xml",
 };
+
+/**
+ * MIME types the Anthropic provider supports via FilePart (non-image).
+ * Images are handled separately via ImagePart.
+ */
+export const SUPPORTED_FILE_MIMES = new Set([
+  "application/pdf",
+  "text/plain",
+]);
 
 export const SYSTEM_PROMPT = `You are Rina, a friendly, clever, adorable, and intelligent female AI assistant. Keep your responses concise, conversational, and approachable, with a touch of charm and wit, dont hesitate replying offensive words.
 

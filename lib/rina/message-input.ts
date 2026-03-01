@@ -1,10 +1,28 @@
-import type { ImagePart, ModelMessage, TextPart, UserContent } from "ai";
+import type {
+  FilePart,
+  ImagePart,
+  ModelMessage,
+  TextPart,
+  UserContent,
+} from "ai";
 import {
   IMAGE_EXT_TO_MIME,
+  MAX_INBOUND_ATTACHMENTS,
+  MAX_INBOUND_FILE_BYTES,
   MAX_INBOUND_IMAGE_BYTES,
-  MAX_INBOUND_IMAGES,
+  SUPPORTED_FILE_MIMES,
 } from "./constants";
 import type { BotThread, IncomingMessage } from "./types";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** A user-content part that can carry media (image or file). */
+type MediaPart = ImagePart | FilePart;
+
+/** Any part we put inside a UserContent array. */
+type ContentPart = TextPart | MediaPart;
 
 function getFileExtension(value: string): string | null {
   const match = /\.([a-zA-Z0-9]+)$/.exec(value);
@@ -21,7 +39,15 @@ function inferMimeTypeFromUrl(url: string): string | null {
   }
 }
 
-// --- Attachment reading ---
+/** True when the MIME type can be sent to the model (image, PDF, text). */
+function isSupportedMime(mime: string | undefined): boolean {
+  if (!mime) return false;
+  return mime.startsWith("image/") || SUPPORTED_FILE_MIMES.has(mime);
+}
+
+// ---------------------------------------------------------------------------
+// Attachment reading
+// ---------------------------------------------------------------------------
 
 async function readAttachmentData(
   attachment: IncomingMessage["attachments"][number],
@@ -34,84 +60,120 @@ async function readAttachmentData(
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Build a single MediaPart from an attachment
+// ---------------------------------------------------------------------------
+
+/**
+ * Try to convert one attachment into an AI SDK ImagePart or FilePart.
+ * Returns `null` when the attachment is unsupported, too large, or unreadable.
+ */
+async function attachmentToMediaPart(
+  attachment: IncomingMessage["attachments"][number],
+): Promise<MediaPart | null> {
+  const data = await readAttachmentData(attachment);
+  if (!data) return null;
+
+  // Resolve MIME
+  const rawMime = attachment.mimeType ?? "";
+  const isImage = rawMime.startsWith("image/");
+  const isPdfOrText = SUPPORTED_FILE_MIMES.has(rawMime);
+
+  if (isImage) {
+    if (data.length > MAX_INBOUND_IMAGE_BYTES) return null;
+    const fallback = inferMimeTypeFromUrl(attachment.url || "");
+    const mimeType = rawMime || fallback || "image/png";
+    return { type: "image", image: data, mediaType: mimeType };
+  }
+
+  if (isPdfOrText) {
+    if (data.length > MAX_INBOUND_FILE_BYTES) return null;
+    return {
+      type: "file",
+      data,
+      mediaType: rawMime,
+      filename: attachment.name ?? undefined,
+    };
+  }
+
+  // Try inferring from URL extension (covers image links with no mimeType)
+  const inferred = inferMimeTypeFromUrl(attachment.url || "");
+  if (inferred?.startsWith("image/")) {
+    if (data.length > MAX_INBOUND_IMAGE_BYTES) return null;
+    return { type: "image", image: data, mediaType: inferred };
+  }
+
+  return null; // unsupported type
+}
+
+// ---------------------------------------------------------------------------
+// buildPromptFromMessage — current message → UserContent
+// ---------------------------------------------------------------------------
+
 /**
  * Convert an incoming chat message into AI SDK prompt content.
- * Returns UserContent (string or array of text+image parts) + any warnings.
+ * Supports image, PDF, and plain-text attachments.
  */
 export async function buildPromptFromMessage(
   message: IncomingMessage,
 ): Promise<{ content: UserContent; warnings: string[] }> {
   const text = message.text?.trim() ?? "";
-  const imageAttachments = (message.attachments ?? []).filter(
-    (a) => a.type === "image",
+  const supportedAttachments = (message.attachments ?? []).filter((a) =>
+    isSupportedMime(a.mimeType) || a.type === "image",
   );
 
   console.log(
-    `[rina:image-debug] buildPromptFromMessage: text="${text}", total attachments=${message.attachments?.length ?? 0}, image attachments=${imageAttachments.length}`,
+    `[rina:image-debug] buildPromptFromMessage: text="${text}", total attachments=${message.attachments?.length ?? 0}, supported attachments=${supportedAttachments.length}`,
   );
-  for (const att of imageAttachments) {
+  for (const att of supportedAttachments) {
     console.log(
-      `[rina:image-debug]   attachment: name=${att.name}, mimeType=${att.mimeType}, url=${att.url?.slice(0, 80)}...`,
+      `[rina:image-debug]   attachment: name=${att.name}, type=${att.type}, mimeType=${att.mimeType}, url=${att.url?.slice(0, 80)}...`,
     );
   }
 
-  if (imageAttachments.length === 0) {
+  if (supportedAttachments.length === 0) {
     return { content: text || "Hello", warnings: [] };
   }
 
   const warnings: string[] = [];
-  const parts: Array<TextPart | ImagePart> = [
-    { type: "text", text: text || "Please analyze the attached image(s)." },
+  const parts: ContentPart[] = [
+    { type: "text", text: text || "Please analyze the attached file(s)." },
   ];
 
-  for (const [index, attachment] of imageAttachments
-    .slice(0, MAX_INBOUND_IMAGES)
+  for (const [index, attachment] of supportedAttachments
+    .slice(0, MAX_INBOUND_ATTACHMENTS)
     .entries()) {
     try {
-      const data = await readAttachmentData(attachment);
-      if (!data) {
-        console.log(`[rina:image-debug]   image #${index + 1}: fetchData returned null`);
-        warnings.push(`Couldn't read image #${index + 1}; skipped it.`);
+      const part = await attachmentToMediaPart(attachment);
+      if (!part) {
+        console.log(
+          `[rina:image-debug]   attachment #${index + 1}: unsupported or unreadable (name=${attachment.name}, mime=${attachment.mimeType})`,
+        );
+        warnings.push(`Couldn't read attachment #${index + 1} (${attachment.name ?? "unknown"}); skipped it.`);
         continue;
       }
       console.log(
-        `[rina:image-debug]   image #${index + 1}: downloaded ${data.length} bytes, name=${attachment.name}`,
+        `[rina:image-debug]   attachment #${index + 1}: OK, type=${part.type}, name=${attachment.name}`,
       );
-      if (data.length > MAX_INBOUND_IMAGE_BYTES) {
-        warnings.push(
-          `Image #${index + 1} is larger than ${MAX_INBOUND_IMAGE_BYTES / (1024 * 1024)}MB; skipped it.`,
-        );
-        continue;
-      }
-
-      const fallbackMime = inferMimeTypeFromUrl(attachment.url || "");
-      const mimeType = attachment.mimeType?.startsWith("image/")
-        ? attachment.mimeType
-        : fallbackMime || "image/png";
-
-      parts.push({
-        type: "image",
-        image: data,
-        mediaType: mimeType,
-      });
+      parts.push(part);
     } catch (err) {
-      console.error(`[rina:image-debug]   image #${index + 1}: error downloading`, err);
-      warnings.push(`Couldn't process image #${index + 1}; skipped it.`);
+      console.error(`[rina:image-debug]   attachment #${index + 1}: error downloading`, err);
+      warnings.push(`Couldn't process attachment #${index + 1}; skipped it.`);
     }
   }
 
-  if (imageAttachments.length > MAX_INBOUND_IMAGES) {
+  if (supportedAttachments.length > MAX_INBOUND_ATTACHMENTS) {
     warnings.push(
-      `Only the first ${MAX_INBOUND_IMAGES} images were sent to the model.`,
+      `Only the first ${MAX_INBOUND_ATTACHMENTS} attachments were sent to the model.`,
     );
   }
 
-  // If no images could be read, fall back to text-only
+  // If nothing could be read, fall back to text-only
   if (parts.length === 1) {
     return {
       content:
         text ||
-        "I tried to attach images, but none could be read. Ask me to re-upload.",
+        "I tried to process your attachments, but none could be read. Ask me to re-upload.",
       warnings,
     };
   }
@@ -119,29 +181,26 @@ export async function buildPromptFromMessage(
   return { content: parts, warnings };
 }
 
-// --- Thread history conversion ---
+// ---------------------------------------------------------------------------
+// extractMediaParts — pull supported media from any message
+// ---------------------------------------------------------------------------
 
 /**
- * Convert a single chat Message's image attachments into AI SDK ImagePart[].
- * Silently skips any attachments that fail to load or exceed size limits.
+ * Extract image/PDF/text attachments from a message as AI SDK parts.
+ * Silently skips unsupported or unreadable attachments.
  */
-async function extractImageParts(
+async function extractMediaParts(
   message: IncomingMessage,
-): Promise<ImagePart[]> {
-  const images = (message.attachments ?? []).filter((a) => a.type === "image");
-  const parts: ImagePart[] = [];
+): Promise<MediaPart[]> {
+  const candidates = (message.attachments ?? []).filter(
+    (a) => isSupportedMime(a.mimeType) || a.type === "image",
+  );
+  const parts: MediaPart[] = [];
 
-  for (const attachment of images.slice(0, MAX_INBOUND_IMAGES)) {
+  for (const attachment of candidates.slice(0, MAX_INBOUND_ATTACHMENTS)) {
     try {
-      const data = await readAttachmentData(attachment);
-      if (!data || data.length > MAX_INBOUND_IMAGE_BYTES) continue;
-
-      const fallbackMime = inferMimeTypeFromUrl(attachment.url || "");
-      const mimeType = attachment.mimeType?.startsWith("image/")
-        ? attachment.mimeType
-        : fallbackMime || "image/png";
-
-      parts.push({ type: "image", image: data, mediaType: mimeType });
+      const part = await attachmentToMediaPart(attachment);
+      if (part) parts.push(part);
     } catch {
       // Skip unreadable attachments silently in history
     }
@@ -150,11 +209,15 @@ async function extractImageParts(
   return parts;
 }
 
+// ---------------------------------------------------------------------------
+// convertThreadHistory
+// ---------------------------------------------------------------------------
+
 /**
  * Fetch all messages from a thread and convert them to AI SDK ModelMessage[].
  *
  * - Messages authored by the bot (author.isMe) become assistant messages.
- * - All other messages become user messages (with image attachments if present).
+ * - All other messages become user messages (with media attachments if present).
  * - The current incoming message is excluded to avoid duplication.
  *
  * Returns messages in chronological order (oldest first).
@@ -172,49 +235,49 @@ export async function convertThreadHistory(
     if (!text && (!msg.attachments || msg.attachments.length === 0)) continue;
 
     console.log(
-      `[rina:image-debug] history msg: id=${msg.id}, isMe=${msg.author.isMe}, text="${text.slice(0, 60)}", attachments=${msg.attachments?.length ?? 0}, imageAttachments=${(msg.attachments ?? []).filter((a) => a.type === "image").length}`,
+      `[rina:image-debug] history msg: id=${msg.id}, isMe=${msg.author.isMe}, text="${text.slice(0, 60)}", attachments=${msg.attachments?.length ?? 0}`,
     );
 
     if (msg.author.isMe) {
       // Bot's own messages → assistant role (text only, since the AI SDK
-      // doesn't support images in assistant content).
+      // doesn't support images/files in assistant content).
       if (text) {
         history.push({ role: "assistant", content: text });
       }
 
-      // When the bot posted images (e.g. via uploadArtifact), inject a
+      // When the bot posted files (e.g. via uploadArtifact), inject a
       // synthetic user message so the model can "see" what it uploaded.
-      // This is necessary because users may refer back to these images.
-      const botImageParts = await extractImageParts(msg);
-      if (botImageParts.length > 0) {
+      // This is necessary because users may refer back to these files.
+      const botMediaParts = await extractMediaParts(msg);
+      if (botMediaParts.length > 0) {
         console.log(
-          `[rina:image-debug]   -> bot msg has ${botImageParts.length} image(s), injecting as user context`,
+          `[rina:image-debug]   -> bot msg has ${botMediaParts.length} file(s), injecting as user context`,
         );
         history.push({
           role: "user",
           content: [
             {
               type: "text",
-              text: "[This is the image you just posted to the chat.]",
+              text: "[This is the file you just posted to the chat.]",
             },
-            ...botImageParts,
+            ...botMediaParts,
           ],
         });
       }
     } else {
-      // Other users' messages → user role with optional images
-      const imageParts = await extractImageParts(msg);
+      // Other users' messages → user role with optional media
+      const mediaParts = await extractMediaParts(msg);
 
       console.log(
-        `[rina:image-debug]   -> user msg added with ${imageParts.length} image(s)`,
+        `[rina:image-debug]   -> user msg added with ${mediaParts.length} file(s)`,
       );
 
-      if (imageParts.length > 0) {
+      if (mediaParts.length > 0) {
         history.push({
           role: "user",
           content: [
-            { type: "text", text: text || "See attached image(s)." },
-            ...imageParts,
+            { type: "text", text: text || "See attached file(s)." },
+            ...mediaParts,
           ],
         });
       } else {
@@ -228,29 +291,26 @@ export async function convertThreadHistory(
 
   // Anthropic requires strictly alternating user/assistant roles.
   // Merge consecutive same-role messages to avoid API errors (e.g. when a
-  // synthetic user image message is followed by a real user message).
+  // synthetic user file message is followed by a real user message).
   const merged: ModelMessage[] = [];
   for (const msg of history) {
     const prev = merged[merged.length - 1];
     if (prev && prev.role === msg.role && prev.role === "user") {
-      // Normalise both contents to part arrays and concatenate
-      const prevParts: Array<TextPart | ImagePart> =
+      const prevParts: ContentPart[] =
         typeof prev.content === "string"
           ? [{ type: "text" as const, text: prev.content }]
-          : (prev.content as Array<TextPart | ImagePart>);
-      const curParts: Array<TextPart | ImagePart> =
+          : (prev.content as ContentPart[]);
+      const curParts: ContentPart[] =
         typeof msg.content === "string"
           ? [{ type: "text" as const, text: msg.content }]
-          : (msg.content as Array<TextPart | ImagePart>);
-      prev.content = [...prevParts, ...curParts];
+          : (msg.content as ContentPart[]);
+      prev.content = [...prevParts, ...curParts] as UserContent;
     } else if (prev && prev.role === msg.role && prev.role === "assistant") {
       // Merge consecutive assistant text messages
-      const prevText = typeof prev.content === "string"
-        ? prev.content
-        : "";
-      const curText = typeof msg.content === "string"
-        ? msg.content
-        : "";
+      const prevText =
+        typeof prev.content === "string" ? prev.content : "";
+      const curText =
+        typeof msg.content === "string" ? msg.content : "";
       prev.content = [prevText, curText].filter(Boolean).join("\n\n");
     } else {
       merged.push({ ...msg });
