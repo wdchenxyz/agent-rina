@@ -39,6 +39,9 @@ yarn-error.log*
 # arxiv paper sources
 artifacts/papers/
 
+# per-thread trace logs
+# logs/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
