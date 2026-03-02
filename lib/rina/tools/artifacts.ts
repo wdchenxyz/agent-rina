@@ -141,8 +141,10 @@ export function createArtifactTools(thread: BotThread) {
       const data = await fs.readFile(resolved);
       const filename = path.basename(artifactPath);
 
+      // markdown must be non-empty: chat SDK requires a text field, and
+      // Slack's chat.postMessage rejects empty text.
       await thread.post({
-        markdown: caption || "",
+        markdown: caption || filename,
         files: [{ data, filename, mimeType }],
       });
 

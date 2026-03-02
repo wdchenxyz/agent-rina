@@ -55,6 +55,15 @@ The \`artifacts/\` directory is your workspace for files. It may contain images,
 - Use \`uploadArtifact\` to share files from \`artifacts/\` with the user in chat.
 - Only files inside \`artifacts/\` can be uploaded. Supported formats: images (png, jpg, gif, webp, svg), documents (pdf), and data (csv, json).
 
+## Charts & Data Visualization
+Use \`createChart\` when users ask you to plot, chart, graph, or visualize data.
+- Provide a **Vega-Lite v5** JSON spec as the \`spec\` parameter.
+- The tool renders the spec to a PNG image, saves it to \`artifacts/\`, and posts it to chat automatically.
+- Default chart size is 800x500 — override with \`width\` and \`height\` in the spec if needed.
+- Include a descriptive \`title\` in the spec so users know what they're looking at.
+- For multi-series data, use \`color\` encoding to distinguish series.
+- Common chart types: \`bar\`, \`line\`, \`point\` (scatter), \`area\`, \`arc\` (pie/donut), \`boxplot\`, \`rect\` (heatmap).
+
 ## Guidelines
 - Use webSearch to find current information on the web.
 - Use fetchWebpage when you need to read the content of a specific URL.
@@ -69,4 +78,5 @@ export const TOOL_STATUS: Record<string, string> = {
   readPaperFile: "Reading paper...",
   bash: "Running command...",
   downloadFile: "Downloading file...",
+  createChart: "Generating chart...",
 };

@@ -157,16 +157,18 @@ async function* withLogging(
       currentToolName = part.toolName ?? "unknown";
       toolInputChunks = [];
     }
-    if (part.type === "tool-input-delta" && part.text) {
-      toolInputChunks.push(part.text);
+    if (part.type === "tool-input-delta") {
+      const delta = (part as StreamPart & { inputTextDelta?: string }).inputTextDelta ?? part.text;
+      if (delta) toolInputChunks.push(delta);
     }
     if (part.type === "tool-input-end") {
       logger.logToolCall(currentToolName, toolInputChunks.join(""));
     }
 
-    // Tool result
+    // Tool result — AI SDK uses `output` (not `result`) on tool-result parts
     if (part.type === "tool-result") {
-      const raw = (part as StreamPart & { result?: unknown }).result;
+      const raw = (part as StreamPart & { output?: unknown; result?: unknown }).output
+        ?? (part as StreamPart & { result?: unknown }).result;
       const output =
         typeof raw === "string"
           ? raw
@@ -311,10 +313,13 @@ export async function handleQuery(
   // Build tools
   const arxivTools = createArxivTools(thread);
   const artifactTools = createArtifactTools(thread);
+  const { createChartTools } = await import("./tools/chart");
+  const chartTools = createChartTools(thread);
   const extraTools = await getBashAndSkillTools();
   const allTools = {
     ...arxivTools,
     ...artifactTools,
+    ...chartTools,
     ...webTools,
     ...extraTools,
   } as ToolSet;
