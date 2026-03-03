@@ -10,7 +10,9 @@ import type { BotThread } from "../types";
 
 const execFileAsync = promisify(execFile);
 
-const PAPERS_DIR = path.resolve("artifacts/papers");
+const PAPERS_DIR = process.env.VERCEL
+  ? path.join("/tmp", "artifacts/papers")
+  : path.resolve("artifacts/papers");
 const MAX_FILE_BYTES = 100 * 1024;
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB per file (Slack limit)
 const USER_AGENT =

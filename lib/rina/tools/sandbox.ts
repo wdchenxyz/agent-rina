@@ -8,8 +8,12 @@ import type { BotThread } from "../types";
 
 // --- Constants ---
 
-const ARTIFACTS_DIR = path.resolve("artifacts");
-const SNAPSHOT_CACHE_PATH = path.resolve(".sandbox-snapshot.json");
+const ARTIFACTS_DIR = process.env.VERCEL
+  ? path.join("/tmp", "artifacts")
+  : path.resolve("artifacts");
+const SNAPSHOT_CACHE_PATH = process.env.VERCEL
+  ? path.join("/tmp", ".sandbox-snapshot.json")
+  : path.resolve(".sandbox-snapshot.json");
 const SANDBOX_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 const COMMAND_TIMEOUT_MS = 90 * 1000; // 90 seconds for the python script
 const MAX_OUTPUT_CHARS = 4000;
