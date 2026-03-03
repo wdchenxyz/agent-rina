@@ -104,7 +104,7 @@ async function loadBashAndSkillTools(): Promise<Record<string, unknown>> {
   const { tools: bashTools } = await createBashTool({
     uploadDirectory: {
       source: ".",
-      include: "**/*.{ts,tsx,js,json,md,yaml,yml}",
+      include: "{app,lib,docs,.agents}/**/*.{ts,tsx,json,md,yaml,yml}",
     },
     files: skillFiles,
     extraInstructions: skillInstructions,

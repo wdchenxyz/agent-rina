@@ -3,7 +3,6 @@ import { createRedisState } from "@chat-adapter/state-redis";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { Chat, type Adapter } from "chat";
 import { registerHandlers } from "../rina";
-import { startNewsScheduler } from "./news/scheduler";
 import type { BotThreadState } from "./types";
 
 function buildAdapters(): Record<string, Adapter> {
@@ -47,4 +46,3 @@ export const bot = new Chat<Record<string, Adapter>, BotThreadState>({
 });
 
 registerHandlers(bot);
-// startNewsScheduler(bot);
