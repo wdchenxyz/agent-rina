@@ -13,6 +13,7 @@ import { SYSTEM_PROMPT, TOOL_STATUS } from "./constants";
 import type { ThreadLogger } from "./logger";
 import { createArtifactTools } from "./tools/artifacts";
 import { createArxivTools } from "./tools/arxiv";
+import { createSandboxTools } from "./tools/sandbox";
 import { webTools } from "./tools/web";
 import type { BotThread } from "./types";
 
@@ -157,16 +158,18 @@ async function* withLogging(
       currentToolName = part.toolName ?? "unknown";
       toolInputChunks = [];
     }
-    if (part.type === "tool-input-delta" && part.text) {
-      toolInputChunks.push(part.text);
+    if (part.type === "tool-input-delta") {
+      const delta = (part as StreamPart & { inputTextDelta?: string }).inputTextDelta ?? part.text;
+      if (delta) toolInputChunks.push(delta);
     }
     if (part.type === "tool-input-end") {
       logger.logToolCall(currentToolName, toolInputChunks.join(""));
     }
 
-    // Tool result
+    // Tool result — AI SDK uses `output` (not `result`) on tool-result parts
     if (part.type === "tool-result") {
-      const raw = (part as StreamPart & { result?: unknown }).result;
+      const raw = (part as StreamPart & { output?: unknown; result?: unknown }).output
+        ?? (part as StreamPart & { result?: unknown }).result;
       const output =
         typeof raw === "string"
           ? raw
@@ -311,10 +314,12 @@ export async function handleQuery(
   // Build tools
   const arxivTools = createArxivTools(thread);
   const artifactTools = createArtifactTools(thread);
+  const sandboxTools = createSandboxTools(thread);
   const extraTools = await getBashAndSkillTools();
   const allTools = {
     ...arxivTools,
     ...artifactTools,
+    ...sandboxTools,
     ...webTools,
     ...extraTools,
   } as ToolSet;

@@ -43,6 +43,7 @@ When asked to summarize a research paper:
 4. As you summarize each section, use uploadPaperFigure to upload relevant figures inline — e.g. the architecture diagram when discussing the method, result plots when discussing experiments. Don't dump all figures at once.
 5. Post your summary section by section — cover motivation, main idea/method, and results/conclusion.
 6. If no LaTeX source is available (PDF-only), fall back to using webSearch or fetchWebpage on the arxiv abstract page.
+7. As you are summarizing a paper, there may contain formula, code snippets, equations, please use proper syntax to wrap them in markdown format, for example, use \`inline code\` for inline snippets, and use triple backticks for code blocks or equations to meet proper formatting in slack chat.
 
 To find the arxiv paper ID from a name, use webSearch to search for it on arxiv first.
 
@@ -54,6 +55,16 @@ The \`artifacts/\` directory is your workspace for files. It may contain images,
 - Use \`downloadFile\` to download images or files from a URL to \`artifacts/\`. **Never use bash (curl/wget/node/python) to download files** — bash runs in a sandbox without network access. Always use \`downloadFile\` instead.
 - Use \`uploadArtifact\` to share files from \`artifacts/\` with the user in chat.
 - Only files inside \`artifacts/\` can be uploaded. Supported formats: images (png, jpg, gif, webp, svg), documents (pdf), and data (csv, json).
+
+## Python Code Execution (Sandbox)
+Use \`runPythonCode\` when you need to run Python code with packages like matplotlib, numpy, pandas, scipy, etc.
+- The code runs in an **isolated Vercel Sandbox microVM** with Python 3.13.
+- Specify pip packages to install via the \`packages\` parameter (e.g. \`["matplotlib", "numpy"]\`).
+- Save output files to the current directory (e.g. \`plt.savefig('plot.png')\`), then list them in \`outputFiles\` so they get retrieved, saved to \`artifacts/\`, and posted to chat.
+- **\`runPythonCode\` already posts output files to chat automatically.** Do NOT call \`uploadArtifact\` afterward for the same files — that causes duplicate posts.
+- Always use \`plt.savefig()\` instead of \`plt.show()\` — there is no display.
+- Always add \`import matplotlib; matplotlib.use('Agg')\` before importing pyplot to avoid display backend errors.
+- The sandbox has network access for pip install but the script itself should not rely on external network calls.
 
 ## Guidelines
 - Use webSearch to find current information on the web.
@@ -69,4 +80,5 @@ export const TOOL_STATUS: Record<string, string> = {
   readPaperFile: "Reading paper...",
   bash: "Running command...",
   downloadFile: "Downloading file...",
+  runPythonCode: "Running Python in sandbox...",
 };
