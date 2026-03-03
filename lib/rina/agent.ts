@@ -1,7 +1,6 @@
-import { anthropic } from "@ai-sdk/anthropic";
-import { openai } from "@ai-sdk/openai";
 import {
   ToolLoopAgent,
+  gateway,
   stepCountIs,
   type ModelMessage,
   type UserContent,
@@ -104,7 +103,7 @@ async function loadBashAndSkillTools(): Promise<Record<string, unknown>> {
   const { tools: bashTools } = await createBashTool({
     uploadDirectory: {
       source: ".",
-      include: "**/*.{ts,tsx,js,json,md,yaml,yml}",
+      include: "{app,lib,docs,.agents}/**/*.{ts,tsx,json,md,yaml,yml}",
     },
     files: skillFiles,
     extraInstructions: skillInstructions,
@@ -325,8 +324,8 @@ export async function handleQuery(
   } as ToolSet;
 
   const agent = new ToolLoopAgent({
-    // model: anthropic("claude-sonnet-4-6"),
-    model: openai("gpt-5.2"),
+    // model: gateway("anthropic/claude-sonnet-4-6"),
+    model: gateway("openai/gpt-5.2"),
     instructions: SYSTEM_PROMPT,
     tools: allTools,
     stopWhen: stepCountIs(MAX_STEPS),
