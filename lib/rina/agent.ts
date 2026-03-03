@@ -13,6 +13,7 @@ import { SYSTEM_PROMPT, TOOL_STATUS } from "./constants";
 import type { ThreadLogger } from "./logger";
 import { createArtifactTools } from "./tools/artifacts";
 import { createArxivTools } from "./tools/arxiv";
+import { createSandboxTools } from "./tools/sandbox";
 import { webTools } from "./tools/web";
 import type { BotThread } from "./types";
 
@@ -315,11 +316,13 @@ export async function handleQuery(
   const artifactTools = createArtifactTools(thread);
   const { createChartTools } = await import("./tools/chart");
   const chartTools = createChartTools(thread);
+  const sandboxTools = createSandboxTools(thread);
   const extraTools = await getBashAndSkillTools();
   const allTools = {
     ...arxivTools,
     ...artifactTools,
     ...chartTools,
+    ...sandboxTools,
     ...webTools,
     ...extraTools,
   } as ToolSet;
