@@ -120,6 +120,17 @@ async function createSnapshot(): Promise<string | null> {
 
     console.log(`[rina:sandbox] uv installed (${elapsed(t0)})`);
 
+    // Initialize a uv project so `uv add` has a pyproject.toml to work with
+    const initResult = await sandbox.runCommand("uv", ["init", "--quiet"]);
+    if (initResult.exitCode !== 0) {
+      const stderr = await initResult.stderr();
+      console.error(
+        `[rina:sandbox] uv init failed (exit ${initResult.exitCode}): ${stderr.slice(0, 500)}`,
+      );
+      await sandbox.stop();
+      return null;
+    }
+
     const pkgResult = await sandbox.runCommand("uv", [
       "add",
       "--quiet",
@@ -312,9 +323,15 @@ export function createSandboxTools(thread: BotThread) {
           COMMAND_TIMEOUT_MS,
         );
 
+        // Use `uv run` when from snapshot (packages live in .venv), plain python3 otherwise
+        const runCmd = usedSnapshot ? "uv" : "python3";
+        const runArgs = usedSnapshot
+          ? ["run", "python3", "script.py"]
+          : ["script.py"];
+
         let result;
         try {
-          result = await sandbox.runCommand("python3", ["script.py"], {
+          result = await sandbox.runCommand(runCmd, runArgs, {
             signal: controller.signal,
           });
         } finally {
