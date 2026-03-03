@@ -314,14 +314,11 @@ export async function handleQuery(
   // Build tools
   const arxivTools = createArxivTools(thread);
   const artifactTools = createArtifactTools(thread);
-  const { createChartTools } = await import("./tools/chart");
-  const chartTools = createChartTools(thread);
   const sandboxTools = createSandboxTools(thread);
   const extraTools = await getBashAndSkillTools();
   const allTools = {
     ...arxivTools,
     ...artifactTools,
-    ...chartTools,
     ...sandboxTools,
     ...webTools,
     ...extraTools,

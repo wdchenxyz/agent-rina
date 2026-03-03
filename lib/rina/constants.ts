@@ -56,15 +56,6 @@ The \`artifacts/\` directory is your workspace for files. It may contain images,
 - Use \`uploadArtifact\` to share files from \`artifacts/\` with the user in chat.
 - Only files inside \`artifacts/\` can be uploaded. Supported formats: images (png, jpg, gif, webp, svg), documents (pdf), and data (csv, json).
 
-## Charts & Data Visualization
-Use \`createChart\` when users ask you to plot, chart, graph, or visualize data.
-- Provide a **Vega-Lite v5** JSON spec as the \`spec\` parameter.
-- The tool renders the spec to a PNG image, saves it to \`artifacts/\`, and posts it to chat automatically.
-- Default chart size is 800x500 — override with \`width\` and \`height\` in the spec if needed.
-- Include a descriptive \`title\` in the spec so users know what they're looking at.
-- For multi-series data, use \`color\` encoding to distinguish series.
-- Common chart types: \`bar\`, \`line\`, \`point\` (scatter), \`area\`, \`arc\` (pie/donut), \`boxplot\`, \`rect\` (heatmap).
-
 ## Python Code Execution (Sandbox)
 Use \`runPythonCode\` when you need to run Python code with packages like matplotlib, numpy, pandas, scipy, etc.
 - The code runs in an **isolated Vercel Sandbox microVM** with Python 3.13.
@@ -74,7 +65,6 @@ Use \`runPythonCode\` when you need to run Python code with packages like matplo
 - Always use \`plt.savefig()\` instead of \`plt.show()\` — there is no display.
 - Always add \`import matplotlib; matplotlib.use('Agg')\` before importing pyplot to avoid display backend errors.
 - The sandbox has network access for pip install but the script itself should not rely on external network calls.
-- For simple charts from structured data, prefer \`createChart\` (Vega-Lite). Use \`runPythonCode\` when you need Python-specific computation, complex visualizations, or data processing that Vega-Lite cannot handle.
 
 ## Guidelines
 - Use webSearch to find current information on the web.
@@ -90,6 +80,5 @@ export const TOOL_STATUS: Record<string, string> = {
   readPaperFile: "Reading paper...",
   bash: "Running command...",
   downloadFile: "Downloading file...",
-  createChart: "Generating chart...",
   runPythonCode: "Running Python in sandbox...",
 };
