@@ -121,9 +121,7 @@ async function createSnapshot(): Promise<string | null> {
     console.log(`[rina:sandbox] uv installed (${elapsed(t0)})`);
 
     const pkgResult = await sandbox.runCommand("uv", [
-      "pip",
-      "install",
-      "--system",
+      "add",
       "--quiet",
       ...SNAPSHOT_PACKAGES,
     ]);
@@ -278,7 +276,7 @@ export function createSandboxTools(thread: BotThread) {
           const tPkg = Date.now();
           const cmd = usedSnapshot ? "uv" : "pip";
           const args = usedSnapshot
-            ? ["pip", "install", "--system", "--quiet", ...toInstall]
+            ? ["add", "--quiet", ...toInstall]
             : ["install", "--quiet", ...toInstall];
 
           console.log(
