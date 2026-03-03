@@ -69,6 +69,9 @@ export class ThreadLogger {
   // -- Internal writer (serialized to avoid interleaved appends) --
 
   private append(text: string): void {
+    // Vercel's serverless filesystem is read-only — skip file writes in production
+    if (process.env.VERCEL) return;
+
     this.writeQueue = this.writeQueue
       .then(async () => {
         await fs.mkdir(path.dirname(this.filePath), { recursive: true });
