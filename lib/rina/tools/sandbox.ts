@@ -15,9 +15,9 @@ const COMMAND_TIMEOUT_MS = 90 * 1000; // 90 seconds for the python script
 const MAX_OUTPUT_CHARS = 4000;
 
 /**
- * Packages pre-installed in the snapshot image.
- * When the user requests only these, pip install is skipped entirely.
- * When the user requests extras beyond these, only the extras are installed.
+ * Packages pre-installed in the snapshot image (alongside uv).
+ * When the user requests only these, package install is skipped entirely.
+ * When the user requests extras beyond these, only the extras are installed via uv.
  */
 const SNAPSHOT_PACKAGES = [
   "matplotlib",
@@ -83,7 +83,8 @@ async function ensureSnapshot(): Promise<string | null> {
 }
 
 /**
- * Spin up a throwaway sandbox, install common packages, and snapshot it.
+ * Spin up a throwaway sandbox, install uv + common packages, and snapshot it.
+ * uv is baked into the snapshot so per-call installs use it for speed.
  * The snapshot call stops the sandbox automatically — no stop() needed.
  */
 async function createSnapshot(): Promise<string | null> {
@@ -91,7 +92,7 @@ async function createSnapshot(): Promise<string | null> {
 
   const t0 = Date.now();
   console.log(
-    `[rina:sandbox] creating snapshot with: ${SNAPSHOT_PACKAGES.join(", ")}`,
+    `[rina:sandbox] creating snapshot with uv + ${SNAPSHOT_PACKAGES.join(", ")}`,
   );
 
   let sandbox: Awaited<ReturnType<typeof Sandbox.create>> | undefined;
@@ -101,16 +102,36 @@ async function createSnapshot(): Promise<string | null> {
       timeout: SANDBOX_TIMEOUT_MS,
     });
 
-    const pipResult = await sandbox.runCommand("pip", [
+    // Install uv first (via pip), then use uv for the rest
+    const uvResult = await sandbox.runCommand("pip", [
       "install",
+      "--quiet",
+      "uv",
+    ]);
+
+    if (uvResult.exitCode !== 0) {
+      const stderr = await uvResult.stderr();
+      console.error(
+        `[rina:sandbox] uv install failed (exit ${uvResult.exitCode}): ${stderr.slice(0, 500)}`,
+      );
+      await sandbox.stop();
+      return null;
+    }
+
+    console.log(`[rina:sandbox] uv installed (${elapsed(t0)})`);
+
+    const pkgResult = await sandbox.runCommand("uv", [
+      "pip",
+      "install",
+      "--system",
       "--quiet",
       ...SNAPSHOT_PACKAGES,
     ]);
 
-    if (pipResult.exitCode !== 0) {
-      const stderr = await pipResult.stderr();
+    if (pkgResult.exitCode !== 0) {
+      const stderr = await pkgResult.stderr();
       console.error(
-        `[rina:sandbox] snapshot pip install failed (exit ${pipResult.exitCode}): ${stderr.slice(0, 500)}`,
+        `[rina:sandbox] snapshot uv install failed (exit ${pkgResult.exitCode}): ${stderr.slice(0, 500)}`,
       );
       await sandbox.stop();
       return null;
@@ -168,7 +189,7 @@ export function createSandboxTools(thread: BotThread) {
     description:
       "Execute Python code in an isolated Vercel Sandbox (microVM) with full package support. " +
       "Use this for tasks that need Python packages like matplotlib, numpy, pandas, scipy, etc. " +
-      "The code runs in a fresh Python 3.13 environment. Specify any pip packages to install. " +
+      "The code runs in a fresh Python 3.13 environment. Specify any packages to install. " +
       "Common data-science packages (matplotlib, numpy, pandas, scipy, seaborn, pillow, scikit-learn) " +
       "are pre-cached and load instantly — no install delay for these. " +
       "Any files the script writes (e.g. plots, CSVs) can be retrieved by listing them in outputFiles. " +
@@ -186,7 +207,7 @@ export function createSandboxTools(thread: BotThread) {
         .array(z.string())
         .optional()
         .describe(
-          "pip packages to install before running the code. " +
+          "Packages to install before running the code (installed via uv for speed). " +
             'Example: ["matplotlib", "numpy", "pandas"]. ' +
             "Common data-science packages are pre-cached and skip install. " +
             "Omit if no extra packages are needed.",
@@ -247,34 +268,36 @@ export function createSandboxTools(thread: BotThread) {
         }
 
         // --- 2. Install packages (skip those already in snapshot) ---
+        // Use uv when from snapshot (uv is baked in), fall back to pip otherwise
         const requested = packages ?? [];
         const toInstall = usedSnapshot
           ? requested.filter((p) => !snapshotPkgs.includes(p))
           : requested;
 
         if (toInstall.length > 0) {
-          const tPip = Date.now();
+          const tPkg = Date.now();
+          const cmd = usedSnapshot ? "uv" : "pip";
+          const args = usedSnapshot
+            ? ["pip", "install", "--system", "--quiet", ...toInstall]
+            : ["install", "--quiet", ...toInstall];
+
           console.log(
-            `[rina:sandbox] pip install: ${toInstall.join(", ")}`,
+            `[rina:sandbox] ${cmd} install: ${toInstall.join(", ")}`,
           );
 
-          const pipResult = await sandbox.runCommand("pip", [
-            "install",
-            "--quiet",
-            ...toInstall,
-          ]);
+          const pkgResult = await sandbox.runCommand(cmd, args);
 
-          if (pipResult.exitCode !== 0) {
-            const stderr = await pipResult.stderr();
-            return `Failed to install packages (exit ${pipResult.exitCode}):\n${truncate(stderr, MAX_OUTPUT_CHARS)}`;
+          if (pkgResult.exitCode !== 0) {
+            const stderr = await pkgResult.stderr();
+            return `Failed to install packages (exit ${pkgResult.exitCode}):\n${truncate(stderr, MAX_OUTPUT_CHARS)}`;
           }
 
           console.log(
-            `[rina:sandbox] pip install done (${elapsed(tPip)})`,
+            `[rina:sandbox] ${cmd} install done (${elapsed(tPkg)})`,
           );
         } else if (requested.length > 0) {
           console.log(
-            `[rina:sandbox] all ${requested.length} packages from snapshot, skipping pip`,
+            `[rina:sandbox] all ${requested.length} packages from snapshot, skipping install`,
           );
         }
 
