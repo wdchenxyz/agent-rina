@@ -1,14 +1,12 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
+import { gunzipSync } from "node:zlib";
 
 import { tool } from "ai";
+import { extract as tarExtract } from "tar";
 import { z } from "zod";
 
 import type { BotThread } from "../types";
-
-const execFileAsync = promisify(execFile);
 
 const PAPERS_DIR = process.env.VERCEL
   ? path.join("/tmp", "artifacts/papers")
@@ -137,20 +135,14 @@ export function createArxivTools(thread: BotThread) {
       await fs.writeFile(archivePath, buffer);
 
       try {
-        // Try tar.gz first (most common)
-        await execFileAsync("tar", ["-xzf", archivePath, "-C", dir]);
+        // Try tar.gz first (most common arxiv format)
+        await tarExtract({ file: archivePath, cwd: dir });
       } catch {
         try {
-          // Try plain gzip (single .tex file)
-          await execFileAsync("gunzip", ["-f", archivePath]);
-          const files = await fs.readdir(dir);
-          const remaining = files.filter((f) => f !== "__source_archive");
-          if (remaining.length === 1 && !remaining[0].endsWith(".tex")) {
-            await fs.rename(
-              path.join(dir, remaining[0]),
-              path.join(dir, "main.tex"),
-            );
-          }
+          // Fallback: plain gzip (single .tex file)
+          const compressed = await fs.readFile(archivePath);
+          const decompressed = gunzipSync(compressed);
+          await fs.writeFile(path.join(dir, "main.tex"), decompressed);
         } catch {
           await fs.rm(dir, { recursive: true, force: true });
           return `Failed to extract source archive. Content-Type was: ${contentType}`;
