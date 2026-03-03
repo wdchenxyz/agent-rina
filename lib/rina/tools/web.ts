@@ -1,5 +1,5 @@
 import { google } from "@ai-sdk/google";
-import { generateText, tool } from "ai";
+import { gateway, generateText, tool } from "ai";
 import { z } from "zod";
 
 /**
@@ -15,7 +15,7 @@ export const webSearch = tool({
   }),
   execute: async ({ query }) => {
     const { text, sources } = await generateText({
-      model: google("gemini-2.5-flash"),
+      model: gateway("google/gemini-2.5-flash"),
       tools: { google_search: google.tools.googleSearch({}) },
       prompt: query,
     });
@@ -52,7 +52,7 @@ export const fetchWebpage = tool({
       ? `Based on this page: ${url}\n\nAnswer: ${question}`
       : `Read and summarize the content of: ${url}`;
     const { text, sources } = await generateText({
-      model: google("gemini-2.5-flash"),
+      model: gateway("google/gemini-2.5-flash"),
       tools: { url_context: google.tools.urlContext({}) },
       prompt,
     });
