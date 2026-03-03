@@ -6,7 +6,9 @@ import { z } from "zod";
 
 import type { BotThread } from "../types";
 
-const ARTIFACTS_DIR = path.resolve("artifacts");
+const ARTIFACTS_DIR = process.env.VERCEL
+  ? path.join("/tmp", "artifacts")
+  : path.resolve("artifacts");
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB (Slack limit)
 
 const ALLOWED_EXTENSIONS: Record<string, string> = {
