@@ -78,17 +78,34 @@ export const fetchWebpage = tool({
  */
 export const perplexitySearch = tool({
   description:
-    "Search the web for news, current events, and real-time information. Returns structured search results with excerpts and URLs.",
+    "Search the web for news, current events, and real-time information. Returns structured search results with excerpts and URLs. Use 'recency' to filter by freshness and 'maxResults' to control how many results to return.",
   inputSchema: z.object({
     query: z.string().describe("The search query"),
+    recency: z
+      .enum(["day", "week", "month", "year"])
+      .optional()
+      .describe(
+        "Filter results by recency. Use 'day' for breaking news, 'week' for recent events, 'month' for recent developments, 'year' for broader context."
+      ),
+    maxResults: z
+      .number()
+      .min(1)
+      .max(20)
+      .optional()
+      .describe(
+        "Maximum number of search results to return (1-20). Use higher values when thoroughness matters."
+      ),
   }),
-  execute: async ({ query }) => {
+  execute: async ({ query, recency, maxResults }) => {
     try {
       const result = await generateText({
         model: gateway("openai/gpt-5.3-chat"),
         prompt: `Search for: ${query}`,
         tools: {
-          perplexity_search: gateway.tools.perplexitySearch(),
+          perplexity_search: gateway.tools.perplexitySearch({
+            ...(recency && { searchRecencyFilter: recency }),
+            ...(maxResults && { maxResults }),
+          }),
         },
       });
 
