@@ -15,7 +15,7 @@ export const webSearch = tool({
   }),
   execute: async ({ query }) => {
     const { text, sources } = await generateText({
-      model: gateway("google/gemini-2.5-flash"),
+      model: gateway("google/gemini-3.1-flash-lite-preview"),
       tools: { google_search: google.tools.googleSearch({}) },
       prompt: query,
     });
@@ -52,7 +52,7 @@ export const fetchWebpage = tool({
       ? `Based on this page: ${url}\n\nAnswer: ${question}`
       : `Read and summarize the content of: ${url}`;
     const { text, sources } = await generateText({
-      model: gateway("google/gemini-2.5-flash"),
+      model: gateway("google/gemini-3.1-flash-lite-preview"),
       tools: { url_context: google.tools.urlContext({}) },
       prompt,
     });
@@ -66,7 +66,15 @@ export const fetchWebpage = tool({
   },
 });
 
+/**
+ * Perplexity search tool: gateway-executed web search via Perplexity's Sonar API.
+ * Unlike webSearch (which requires a separate Gemini call), this tool is executed
+ * directly by the AI Gateway — no workaround needed.
+ */
+export const perplexitySearch = gateway.tools.perplexitySearch({});
+
 export const webTools = {
   webSearch,
   fetchWebpage,
+  perplexitySearch,
 };
