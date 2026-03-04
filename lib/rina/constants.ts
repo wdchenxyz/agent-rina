@@ -71,22 +71,7 @@ Use \`runPythonCode\` when you need to run Python code with packages like matplo
 - **perplexitySearch**: Best for news, current events, and real-time info. Returns structured results with URLs and snippets. Use the \`recency\` parameter to control freshness (e.g. \`"day"\` or \`"week"\` for breaking news, \`"month"\` for recent developments). Use \`maxResults\` to get more sources when thoroughness matters.
 - **webSearch**: Best for general grounded answers. Calls Gemini with Google Search grounding and returns a synthesized answer with sources.
 - **fetchWebpage**: Use when you need a quick summary of a specific URL — it calls Gemini with URL context grounding and returns a synthesized answer (not raw HTML).
-- **fetchRenderedPage**: Use when you need the **actual page content** (raw HTML, visible text, or image URLs) from a URL — especially when \`fetchWebpage\` or Python \`requests\` fail (403, JS-rendered content). It uses a headless browser to fully render the page. Supports \`extract: "text"\` (default), \`"html"\`, or \`"images"\`.
 - After searching, **always prefer information backed by specific URLs and citations** over vague or unsourced claims. If search results conflict, note the discrepancy and cite both sources rather than silently picking one.
-
-## Browser Automation (agent-browser)
-For complex browser tasks beyond simple page fetching (e.g. multi-step navigation, form filling, screenshots, data extraction from interactive pages), use \`bash\` to run \`npx agent-browser\` commands directly. Key commands:
-- \`npx agent-browser open <url>\` — navigate to a URL
-- \`npx agent-browser wait --load networkidle\` — wait for page to fully load
-- \`npx agent-browser snapshot -i\` — get interactive elements with refs (@e1, @e2, etc.)
-- \`npx agent-browser click @e1\` / \`npx agent-browser fill @e2 "text"\` — interact with elements
-- \`npx agent-browser screenshot output.png\` — take a screenshot
-- \`npx agent-browser eval '<js>'\` — run JavaScript in the browser context
-- \`npx agent-browser get text body\` — get all visible text
-- \`npx agent-browser close\` — always close the session when done
-Always use \`--session rina\` flag and close the session after use.
-
-## General
 - Use bash to explore files, run commands, and process data.
 - Be concise and direct in your responses.`;
 
@@ -94,7 +79,6 @@ export const TOOL_STATUS: Record<string, string> = {
   webSearch: "Searching the web...",
   perplexitySearch: "Searching with Perplexity...",
   fetchWebpage: "Fetching page...",
-  fetchRenderedPage: "Rendering page in browser...",
   downloadArxivSource: "Downloading paper source...",
   listPaperFiles: "Listing paper files...",
   readPaperFile: "Reading paper...",
