@@ -1,6 +1,37 @@
+import { execFile } from "child_process";
+import { resolve as resolvePath } from "path";
 import { google } from "@ai-sdk/google";
 import { gateway, generateText, tool } from "ai";
 import { z } from "zod";
+
+const AB_SESSION = "rina";
+const AB_TIMEOUT_MS = 30_000;
+/** Resolve to the project-local agent-browser binary. */
+const AB_BIN = resolvePath(process.cwd(), "node_modules/.bin/agent-browser");
+
+/** Run an agent-browser command and return stdout. */
+function ab(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      AB_BIN,
+      ["--session", AB_SESSION, ...args],
+      { timeout: AB_TIMEOUT_MS },
+      (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr || err.message));
+        else resolve(stdout.trim());
+      }
+    );
+  });
+}
+
+/** Ensure the browser session is closed (best-effort). */
+async function abClose() {
+  try {
+    await ab(["close"]);
+  } catch {
+    /* session may already be closed */
+  }
+}
 
 /**
  * Web search tool: internally calls Gemini with google_search grounding.
@@ -139,8 +170,72 @@ export const perplexitySearch = tool({
   },
 });
 
+/**
+ * Fetch a fully rendered webpage using a headless browser (agent-browser).
+ * Handles JS-rendered pages and sites that block simple HTTP requests (403).
+ * Falls back gracefully if agent-browser is not available.
+ */
+export const fetchRenderedPage = tool({
+  description:
+    "Fetch a fully rendered webpage using a headless browser. Use this when you need raw HTML, visible text, or image URLs from a page. Supports extracting text, HTML, or image URLs.",
+  inputSchema: z.object({
+    url: z.string().url().describe("The URL to fetch"),
+    extract: z
+      .enum(["text", "html", "images"])
+      .optional()
+      .describe(
+        "What to extract: 'text' for visible page text (default), 'html' for full rendered HTML, 'images' for all image URLs on the page."
+      ),
+  }),
+  execute: async ({ url, extract = "text" }) => {
+    try {
+      await ab(["open", url]);
+      // Use "load" instead of "networkidle" — networkidle hangs on sites with
+      // persistent connections (analytics, websockets, long-polling).
+      // Add a short extra wait for JS to finish rendering.
+      await ab(["wait", "--load", "load"]);
+      await ab(["wait", "1500"]);
+
+      const title = await ab(["get", "title"]);
+      const finalUrl = await ab(["get", "url"]);
+
+      let content: string;
+      switch (extract) {
+        case "html":
+          content = await ab(["eval", "document.documentElement.outerHTML"]);
+          // Truncate to avoid blowing up context
+          if (content.length > 100_000) {
+            content = content.slice(0, 100_000) + "\n\n[truncated at 100k chars]";
+          }
+          break;
+        case "images":
+          content = await ab([
+            "eval",
+            'JSON.stringify(Array.from(document.querySelectorAll("img")).map(i=>({src:i.src,alt:i.alt||""})).filter(i=>i.src))',
+          ]);
+          break;
+        case "text":
+        default:
+          content = await ab(["get", "text", "body"]);
+          if (content.length > 50_000) {
+            content = content.slice(0, 50_000) + "\n\n[truncated at 50k chars]";
+          }
+          break;
+      }
+
+      return { title, url: finalUrl, content };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { error: `Failed to fetch rendered page: ${msg}` };
+    } finally {
+      await abClose();
+    }
+  },
+});
+
 export const webTools = {
   webSearch,
   fetchWebpage,
+  fetchRenderedPage,
   perplexitySearch,
 };
