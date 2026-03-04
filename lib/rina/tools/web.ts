@@ -67,16 +67,16 @@ export const fetchWebpage = tool({
 });
 
 /**
- * Parallel search tool: wraps the AI Gateway's Parallel AI search in a locally-
- * executed tool. We use a cheap inner model (gpt-5-nano) purely to trigger the
- * gateway-executed search, then extract the raw results from the tool output.
+ * Perplexity search tool: wraps the AI Gateway's Perplexity search in a locally-
+ * executed tool. We use a cheap inner model purely to trigger the gateway-executed
+ * search, then extract the raw results from the tool output.
  *
  * This wrapper is necessary because provider-executed gateway tools don't work
  * with the SDK's multi-step loop — the stream ends after the tool result without
  * generating text. By wrapping it in a local execute(), the outer agent's loop
  * continues normally and synthesises a response from the raw search data.
  */
-export const parallelSearch = tool({
+export const perplexitySearch = tool({
   description:
     "Search the web for news, current events, and real-time information. Returns structured search results with excerpts and URLs.",
   inputSchema: z.object({
@@ -85,10 +85,10 @@ export const parallelSearch = tool({
   execute: async ({ query }) => {
     try {
       const result = await generateText({
-        model: gateway("openai/gpt-5-nano"),
+        model: gateway("openai/gpt-5.3-chat"),
         prompt: `Search for: ${query}`,
         tools: {
-          parallel_search: gateway.tools.parallelSearch({ mode: "agentic" }),
+          perplexity_search: gateway.tools.perplexitySearch(),
         },
       });
 
@@ -125,5 +125,5 @@ export const parallelSearch = tool({
 export const webTools = {
   webSearch,
   fetchWebpage,
-  parallelSearch,
+  perplexitySearch,
 };
