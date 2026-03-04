@@ -66,7 +66,15 @@ export const fetchWebpage = tool({
   },
 });
 
+/**
+ * Perplexity search tool: gateway-executed web search via Perplexity's Sonar API.
+ * Unlike webSearch (which requires a separate Gemini call), this tool is executed
+ * directly by the AI Gateway — no workaround needed.
+ */
+export const perplexitySearch = gateway.tools.perplexitySearch({});
+
 export const webTools = {
   webSearch,
   fetchWebpage,
+  perplexitySearch,
 };
