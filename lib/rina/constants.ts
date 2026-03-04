@@ -67,7 +67,7 @@ Use \`runPythonCode\` when you need to run Python code with packages like matplo
 - The sandbox has network access for pip install but the script itself should not rely on external network calls.
 
 ## Guidelines
-- Use perplexitySearch for news, current events, and real-time information — it searches the web via Perplexity and returns structured results with URLs.
+- Use parallelSearch for news, current events, and real-time information — it searches the web via Parallel AI and returns structured excerpts with URLs.
 - Use webSearch for general grounded answers — it calls Gemini with Google Search grounding and returns a synthesized answer with sources.
 - Use fetchWebpage when you need to read the content of a specific URL.
 - Use bash to explore files, run commands, and process data.
@@ -75,7 +75,7 @@ Use \`runPythonCode\` when you need to run Python code with packages like matplo
 
 export const TOOL_STATUS: Record<string, string> = {
   webSearch: "Searching the web...",
-  perplexitySearch: "Searching with Perplexity...",
+  parallelSearch: "Searching with Parallel...",
   fetchWebpage: "Fetching page...",
   downloadArxivSource: "Downloading paper source...",
   listPaperFiles: "Listing paper files...",

@@ -67,14 +67,63 @@ export const fetchWebpage = tool({
 });
 
 /**
- * Perplexity search tool: gateway-executed web search via Perplexity's Sonar API.
- * Unlike webSearch (which requires a separate Gemini call), this tool is executed
- * directly by the AI Gateway — no workaround needed.
+ * Parallel search tool: wraps the AI Gateway's Parallel AI search in a locally-
+ * executed tool. We use a cheap inner model (gpt-5-nano) purely to trigger the
+ * gateway-executed search, then extract the raw results from the tool output.
+ *
+ * This wrapper is necessary because provider-executed gateway tools don't work
+ * with the SDK's multi-step loop — the stream ends after the tool result without
+ * generating text. By wrapping it in a local execute(), the outer agent's loop
+ * continues normally and synthesises a response from the raw search data.
  */
-export const perplexitySearch = gateway.tools.perplexitySearch({});
+export const parallelSearch = tool({
+  description:
+    "Search the web for news, current events, and real-time information. Returns structured search results with excerpts and URLs.",
+  inputSchema: z.object({
+    query: z.string().describe("The search query"),
+  }),
+  execute: async ({ query }) => {
+    try {
+      const result = await generateText({
+        model: gateway("openai/gpt-5-nano"),
+        prompt: `Search for: ${query}`,
+        tools: {
+          parallel_search: gateway.tools.parallelSearch({ mode: "agentic" }),
+        },
+      });
+
+      // Provider-executed tool results store data in `output`, not `result`
+      const tr = result.steps[0]?.toolResults?.[0] as
+        | { output?: { results?: Array<Record<string, unknown>> } }
+        | undefined;
+      const raw = tr?.output?.results;
+
+      if (raw?.length) {
+        return {
+          results: raw.map((r) => ({
+            title: (r.title as string) ?? "",
+            url: (r.url as string) ?? "",
+            snippet: (r.snippet as string) ?? "",
+            date: (r.date as string) ?? "",
+          })),
+        };
+      }
+
+      // Fallback: model answered from training data without calling the tool
+      if (result.text) {
+        return { results: [], text: result.text };
+      }
+
+      return { results: [], text: "No search results found." };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { results: [], text: `Search failed: ${msg}` };
+    }
+  },
+});
 
 export const webTools = {
   webSearch,
   fetchWebpage,
-  perplexitySearch,
+  parallelSearch,
 };

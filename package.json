@@ -7,8 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "pg": "tsx top_secret/pg.ts",
-    "agent": "tsx top_secret/agent.mts"
+    "pg": "tsx scripts/playground.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.37",
