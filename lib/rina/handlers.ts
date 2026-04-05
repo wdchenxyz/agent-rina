@@ -25,6 +25,9 @@ type AssistantRunOptions = {
   history?: ModelMessage[];
   logger?: ThreadLogger;
 };
+type AssistantRunSetup = (
+  logger: ThreadLogger,
+) => Promise<AssistantRunOptions> | AssistantRunOptions;
 
 /**
  * Slack's `app_mention` events don't include file attachments, but often win
@@ -104,69 +107,80 @@ async function runWithProcessingLifecycle(
   }
 }
 
-async function handleFirstMessage(
+async function handleIncomingMessage(
   thread: BotThread,
   message: IncomingMessage,
+  options: {
+    failureContext: string;
+    subscribe?: boolean;
+    ignoreOwnMessages?: boolean;
+    setup?: AssistantRunSetup;
+  },
 ): Promise<void> {
+  if (options.ignoreOwnMessages && message.author.isMe) return;
   if (!isAccessAllowed(thread, message)) return;
 
   const logger = new ThreadLogger(thread.adapter.name, thread.id);
   logger.logSeparator(message.id);
 
-  await thread.subscribe();
+  if (options.subscribe) {
+    await thread.subscribe();
+  }
+
   await runWithProcessingLifecycle(
     thread,
     message,
-    `[rina] Failed to handle first message in ${thread.id}`,
+    options.failureContext,
     async () => {
-      await runAssistant(thread, message, { logger });
+      const setupOptions = await options.setup?.(logger);
+      await runAssistant(thread, message, { ...setupOptions, logger });
     },
   );
 }
 
-async function handleSubscribedMessage(
+async function loadSubscribedRunOptions(
   bot: BotChat,
   thread: BotThread,
   message: IncomingMessage,
-): Promise<void> {
-  if (message.author.isMe) return;
-  if (!isAccessAllowed(thread, message)) return;
+  logger: ThreadLogger,
+): Promise<AssistantRunOptions> {
+  // Fetch thread history and digest context in parallel.
+  const [history, digestContext] = await Promise.all([
+    convertThreadHistory(thread, message.id),
+    getDigestThreadContext(bot.getState(), thread.id),
+  ]);
+  logger.logHistory(history);
 
-  const logger = new ThreadLogger(thread.adapter.name, thread.id);
-  logger.logSeparator(message.id);
-
-  await runWithProcessingLifecycle(
-    thread,
-    message,
-    `[rina] Failed to handle subscribed message in ${thread.id}`,
-    async () => {
-      // Fetch thread history and digest context in parallel.
-      const [history, digestContext] = await Promise.all([
-        convertThreadHistory(thread, message.id),
-        getDigestThreadContext(bot.getState(), thread.id),
-      ]);
-      logger.logHistory(history);
-      const prelude = digestContext
-        ? buildDigestContextPrelude(digestContext)
-        : undefined;
-
-      await runAssistant(thread, message, { prelude, history, logger });
-    },
-  );
+  return {
+    history,
+    prelude: digestContext
+      ? buildDigestContextPrelude(digestContext)
+      : undefined,
+  };
 }
 
 export function registerHandlers(bot: BotChat): void {
   bot.onNewMention(async (thread, message) => {
-    await handleFirstMessage(thread, message);
+    await handleIncomingMessage(thread, message, {
+      failureContext: `[rina] Failed to handle first message in ${thread.id}`,
+      subscribe: true,
+    });
   });
 
   bot.onSubscribedMessage(async (thread, message) => {
-    await handleSubscribedMessage(bot, thread, message);
+    await handleIncomingMessage(thread, message, {
+      failureContext: `[rina] Failed to handle subscribed message in ${thread.id}`,
+      ignoreOwnMessages: true,
+      setup: (logger) => loadSubscribedRunOptions(bot, thread, message, logger),
+    });
   });
 
   // Catch-all for Telegram DMs (they don't have @mentions)
   bot.onNewMessage(/[\s\S]*/, async (thread, message) => {
     if (!isTelegramDirectMessage(thread)) return;
-    await handleFirstMessage(thread, message);
+    await handleIncomingMessage(thread, message, {
+      failureContext: `[rina] Failed to handle first message in ${thread.id}`,
+      subscribe: true,
+    });
   });
 }
