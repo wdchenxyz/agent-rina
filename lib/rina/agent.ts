@@ -84,6 +84,30 @@ async function postWithRetry(
   }
 }
 
+async function postToolStatus(
+  thread: BotThread,
+  part: StreamPart,
+): Promise<void> {
+  if (part.type !== "tool-input-start" || !part.toolName) return;
+
+  console.log(`[rina] tool: ${part.toolName}`);
+  const status = TOOL_STATUS[part.toolName];
+  if (status) {
+    await postWithRetry(thread, `> ${status}`);
+  }
+}
+
+async function postBufferedText(
+  thread: BotThread,
+  text: string,
+): Promise<void> {
+  if (text.trim().length === 0) return;
+
+  for (const chunk of splitLongText(text)) {
+    await postWithRetry(thread, chunk);
+  }
+}
+
 // --- Lazy bash/skill tool setup ---
 
 let bashToolsPromise: Promise<Record<string, unknown>> | null = null;
@@ -137,6 +161,42 @@ interface StreamPart {
   type: string;
   text?: string;
   toolName?: string;
+}
+
+function createTextStreamBridge(): {
+  stream: AsyncGenerator<string>;
+  push: (chunk: string) => void;
+  close: () => void;
+} {
+  const state = {
+    chunks: [] as string[],
+    resolve: null as (() => void) | null,
+    done: false,
+  };
+
+  async function* stream(): AsyncGenerator<string> {
+    while (true) {
+      while (state.chunks.length > 0) {
+        yield state.chunks.shift()!;
+      }
+      if (state.done) return;
+      await new Promise<void>((resolve) => {
+        state.resolve = resolve;
+      });
+    }
+  }
+
+  return {
+    stream: stream(),
+    push(chunk: string) {
+      state.chunks.push(chunk);
+      state.resolve?.();
+    },
+    close() {
+      state.done = true;
+      state.resolve?.();
+    },
+  };
 }
 
 // --- Stream logging wrapper ---
@@ -201,59 +261,34 @@ async function streamToChat(
   fullStream: AsyncIterable<StreamPart>,
   thread: BotThread,
 ): Promise<void> {
-  // Shared state for the async generator bridge
-  const state = {
-    chunks: [] as string[],
-    resolve: null as (() => void) | null,
-    done: false,
-  };
-
-  async function* textStream(): AsyncGenerator<string> {
-    while (true) {
-      while (state.chunks.length > 0) yield state.chunks.shift()!;
-      if (state.done) return;
-      await new Promise<void>((r) => {
-        state.resolve = r;
-      });
-    }
-  }
-
+  let bridge:
+    | ReturnType<typeof createTextStreamBridge>
+    | null = null;
   let currentPost: Promise<unknown> | null = null;
-  let inTextBlock = false;
 
   for await (const part of fullStream) {
     if (part.type === "text-start") {
-      inTextBlock = true;
-      state.chunks = [];
-      state.done = false;
-      state.resolve = null;
-      currentPost = thread.post(textStream());
+      bridge = createTextStreamBridge();
+      currentPost = thread.post(bridge.stream);
     }
 
-    if (part.type === "text-delta" && inTextBlock && part.text) {
-      state.chunks.push(part.text);
-      state.resolve?.();
+    if (part.type === "text-delta" && bridge && part.text) {
+      bridge.push(part.text);
     }
 
-    if (part.type === "text-end" && inTextBlock) {
-      state.done = true;
-      state.resolve?.();
+    if (part.type === "text-end" && bridge) {
+      bridge.close();
       await currentPost;
       currentPost = null;
-      inTextBlock = false;
+      bridge = null;
     }
 
-    if (part.type === "tool-input-start" && part.toolName) {
-      console.log(`[rina] tool: ${part.toolName}`);
-      const status = TOOL_STATUS[part.toolName];
-      if (status) await postWithRetry(thread, `> ${status}`);
-    }
+    await postToolStatus(thread, part);
   }
 
   // Safety: close any unclosed stream
-  if (inTextBlock) {
-    state.done = true;
-    state.resolve?.();
+  if (bridge) {
+    bridge.close();
     await currentPost;
   }
 }
@@ -277,27 +312,15 @@ async function bufferToChat(
     }
 
     if (part.type === "text-end") {
-      if (currentTextBlock.trim().length > 0) {
-        for (const chunk of splitLongText(currentTextBlock)) {
-          await postWithRetry(thread, chunk);
-        }
-      }
+      await postBufferedText(thread, currentTextBlock);
       currentTextBlock = "";
     }
 
-    if (part.type === "tool-input-start" && part.toolName) {
-      console.log(`[rina] tool: ${part.toolName}`);
-      const status = TOOL_STATUS[part.toolName];
-      if (status) await postWithRetry(thread, `> ${status}`);
-    }
+    await postToolStatus(thread, part);
   }
 
   // Post any remaining text
-  if (currentTextBlock.trim().length > 0) {
-    for (const chunk of splitLongText(currentTextBlock)) {
-      await postWithRetry(thread, chunk);
-    }
-  }
+  await postBufferedText(thread, currentTextBlock);
 }
 
 // --- Main agent entry point ---
