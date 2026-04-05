@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai";
 import type { Adapter, Chat } from "chat";
 import { isAccessAllowed } from "./access-control";
 import { handleQuery } from "./agent";
@@ -19,6 +20,11 @@ import {
 import type { BotThread, BotThreadState, IncomingMessage } from "./types";
 
 type BotChat = Chat<Record<string, Adapter>, BotThreadState>;
+type AssistantRunOptions = {
+  prelude?: string;
+  history?: ModelMessage[];
+  logger?: ThreadLogger;
+};
 
 /**
  * Slack's `app_mention` events don't include file attachments, but often win
@@ -52,11 +58,7 @@ async function ensureAttachments(
 async function runAssistant(
   thread: BotThread,
   message: IncomingMessage,
-  opts: {
-    prelude?: string;
-    history?: import("ai").ModelMessage[];
-    logger?: ThreadLogger;
-  } = {},
+  opts: AssistantRunOptions = {},
 ): Promise<void> {
   const enriched = await ensureAttachments(thread, message);
   opts.logger?.logIncoming(enriched);
@@ -65,6 +67,41 @@ async function runAssistant(
     await thread.post({ markdown: warnings.map((w) => `> ${w}`).join("\n") });
   }
   await handleQuery(thread, content, opts);
+}
+
+async function postInternalError(thread: BotThread): Promise<void> {
+  try {
+    await thread.post({
+      markdown:
+        "I hit an internal error while generating a reply. Please try again.",
+    });
+  } catch {
+    // Ignore secondary failures
+  }
+}
+
+async function runWithProcessingLifecycle(
+  thread: BotThread,
+  message: IncomingMessage,
+  failureContext: string,
+  run: () => Promise<void>,
+): Promise<void> {
+  await markProcessingStart(thread, message);
+
+  let success = false;
+  try {
+    await run();
+    success = true;
+  } catch (error) {
+    console.error(failureContext, error);
+    await postInternalError(thread);
+  } finally {
+    if (success) {
+      await markProcessingComplete(thread, message);
+    } else {
+      await clearProcessingIndicator(thread, message);
+    }
+  }
 }
 
 async function handleFirstMessage(
@@ -77,32 +114,14 @@ async function handleFirstMessage(
   logger.logSeparator(message.id);
 
   await thread.subscribe();
-  await markProcessingStart(thread, message);
-
-  let success = false;
-  try {
-    await runAssistant(thread, message, { logger });
-    success = true;
-  } catch (error) {
-    console.error(
-      `[rina] Failed to handle first message in ${thread.id}`,
-      error,
-    );
-    try {
-      await thread.post({
-        markdown:
-          "I hit an internal error while generating a reply. Please try again.",
-      });
-    } catch {
-      // Ignore secondary failures
-    }
-  } finally {
-    if (success) {
-      await markProcessingComplete(thread, message);
-    } else {
-      await clearProcessingIndicator(thread, message);
-    }
-  }
+  await runWithProcessingLifecycle(
+    thread,
+    message,
+    `[rina] Failed to handle first message in ${thread.id}`,
+    async () => {
+      await runAssistant(thread, message, { logger });
+    },
+  );
 }
 
 async function handleSubscribedMessage(
@@ -116,42 +135,24 @@ async function handleSubscribedMessage(
   const logger = new ThreadLogger(thread.adapter.name, thread.id);
   logger.logSeparator(message.id);
 
-  await markProcessingStart(thread, message);
+  await runWithProcessingLifecycle(
+    thread,
+    message,
+    `[rina] Failed to handle subscribed message in ${thread.id}`,
+    async () => {
+      // Fetch thread history and digest context in parallel.
+      const [history, digestContext] = await Promise.all([
+        convertThreadHistory(thread, message.id),
+        getDigestThreadContext(bot.getState(), thread.id),
+      ]);
+      logger.logHistory(history);
+      const prelude = digestContext
+        ? buildDigestContextPrelude(digestContext)
+        : undefined;
 
-  // Fetch thread history and digest context in parallel
-  const [history, digestContext] = await Promise.all([
-    convertThreadHistory(thread, message.id),
-    getDigestThreadContext(bot.getState(), thread.id),
-  ]);
-  logger.logHistory(history);
-  const prelude = digestContext
-    ? buildDigestContextPrelude(digestContext)
-    : undefined;
-
-  let success = false;
-  try {
-    await runAssistant(thread, message, { prelude, history, logger });
-    success = true;
-  } catch (error) {
-    console.error(
-      `[rina] Failed to handle subscribed message in ${thread.id}`,
-      error,
-    );
-    try {
-      await thread.post({
-        markdown:
-          "I hit an internal error while generating a reply. Please try again.",
-      });
-    } catch {
-      // Ignore secondary failures
-    }
-  } finally {
-    if (success) {
-      await markProcessingComplete(thread, message);
-    } else {
-      await clearProcessingIndicator(thread, message);
-    }
-  }
+      await runAssistant(thread, message, { prelude, history, logger });
+    },
+  );
 }
 
 export function registerHandlers(bot: BotChat): void {
