@@ -163,6 +163,35 @@ interface StreamPart {
   toolName?: string;
 }
 
+type TextStreamBridge = ReturnType<typeof createTextStreamBridge>;
+type TextBlockStreamHandlers = {
+  onTextStart?: () => Promise<void> | void;
+  onTextDelta?: (text: string) => Promise<void> | void;
+  onTextEnd?: () => Promise<void> | void;
+};
+
+async function consumeTextBlocks(
+  fullStream: AsyncIterable<StreamPart>,
+  thread: BotThread,
+  handlers: TextBlockStreamHandlers,
+): Promise<void> {
+  for await (const part of fullStream) {
+    if (part.type === "text-start") {
+      await handlers.onTextStart?.();
+    }
+
+    if (part.type === "text-delta" && part.text) {
+      await handlers.onTextDelta?.(part.text);
+    }
+
+    if (part.type === "text-end") {
+      await handlers.onTextEnd?.();
+    }
+
+    await postToolStatus(thread, part);
+  }
+}
+
 function createTextStreamBridge(): {
   stream: AsyncGenerator<string>;
   push: (chunk: string) => void;
@@ -261,34 +290,30 @@ async function streamToChat(
   fullStream: AsyncIterable<StreamPart>,
   thread: BotThread,
 ): Promise<void> {
-  let bridge:
-    | ReturnType<typeof createTextStreamBridge>
-    | null = null;
+  let bridge: TextStreamBridge | null = null;
   let currentPost: Promise<unknown> | null = null;
 
-  for await (const part of fullStream) {
-    if (part.type === "text-start") {
+  await consumeTextBlocks(fullStream, thread, {
+    onTextStart() {
       bridge = createTextStreamBridge();
       currentPost = thread.post(bridge.stream);
-    }
-
-    if (part.type === "text-delta" && bridge && part.text) {
-      bridge.push(part.text);
-    }
-
-    if (part.type === "text-end" && bridge) {
+    },
+    onTextDelta(text) {
+      bridge?.push(text);
+    },
+    async onTextEnd() {
+      if (!bridge) return;
       bridge.close();
       await currentPost;
       currentPost = null;
       bridge = null;
-    }
-
-    await postToolStatus(thread, part);
-  }
+    },
+  });
 
   // Safety: close any unclosed stream
-  if (bridge) {
-    bridge.close();
+  const openBridge = bridge as unknown as TextStreamBridge | null;
+  if (openBridge) {
+    openBridge.close();
     await currentPost;
   }
 }
@@ -302,22 +327,18 @@ async function bufferToChat(
 ): Promise<void> {
   let currentTextBlock = "";
 
-  for await (const part of fullStream) {
-    if (part.type === "text-start") {
+  await consumeTextBlocks(fullStream, thread, {
+    onTextStart() {
       currentTextBlock = "";
-    }
-
-    if (part.type === "text-delta" && part.text) {
-      currentTextBlock += part.text;
-    }
-
-    if (part.type === "text-end") {
+    },
+    onTextDelta(text) {
+      currentTextBlock += text;
+    },
+    async onTextEnd() {
       await postBufferedText(thread, currentTextBlock);
       currentTextBlock = "";
-    }
-
-    await postToolStatus(thread, part);
-  }
+    },
+  });
 
   // Post any remaining text
   await postBufferedText(thread, currentTextBlock);
