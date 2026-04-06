@@ -4,7 +4,7 @@ import path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 
-import type { BotThread } from "../types";
+import type { FileUploadResult } from "./artifacts";
 
 // --- Constants ---
 
@@ -197,7 +197,7 @@ function truncate(text: string, maxLen: number): string {
  * Creates sandbox tools that run Python code in an isolated Vercel Sandbox
  * microVM and retrieve output files into artifacts/.
  */
-export function createSandboxTools(thread: BotThread) {
+export function createSandboxTools() {
   const runPythonCode = tool({
     description:
       "Execute Python code in an isolated Vercel Sandbox (microVM) with full package support. " +
@@ -351,6 +351,7 @@ export function createSandboxTools(thread: BotThread) {
 
         // --- 5. Retrieve output files ---
         const retrievedFiles: string[] = [];
+        const uploads: FileUploadResult[] = [];
 
         if (outputFiles && outputFiles.length > 0) {
           await fs.mkdir(ARTIFACTS_DIR, { recursive: true });
@@ -376,7 +377,7 @@ export function createSandboxTools(thread: BotThread) {
               await fs.writeFile(localPath, buffer);
               retrievedFiles.push(path.basename(filename));
 
-              // Post to chat
+              // Build file upload for delivery layer
               const ext = path.extname(filename).slice(1).toLowerCase();
               const mimeMap: Record<string, string> = {
                 png: "image/png",
@@ -391,15 +392,12 @@ export function createSandboxTools(thread: BotThread) {
               };
               const mimeType = mimeMap[ext] || "application/octet-stream";
 
-              await thread.post({
-                markdown: path.basename(filename),
-                files: [
-                  {
-                    data: buffer,
-                    filename: path.basename(filename),
-                    mimeType,
-                  },
-                ],
+              uploads.push({
+                _type: "file-upload",
+                caption: path.basename(filename),
+                filename: path.basename(filename),
+                mimeType,
+                dataBase64: buffer.toString("base64"),
               });
 
               console.log(
@@ -414,7 +412,7 @@ export function createSandboxTools(thread: BotThread) {
           }
         }
 
-        // --- 6. Build result for the LLM ---
+        // --- 6. Build result ---
         const parts: string[] = [];
 
         if (result.exitCode !== 0) {
@@ -446,7 +444,13 @@ export function createSandboxTools(thread: BotThread) {
           `[rina:sandbox] total execution time: ${elapsed(tTotal)}`,
         );
 
-        return parts.join("\n\n");
+        const summary = parts.join("\n\n");
+
+        // Return structured result with files if any, plain string otherwise
+        if (uploads.length > 0) {
+          return { summary, files: uploads };
+        }
+        return summary;
       } catch (error) {
         const message =
           error instanceof Error ? error.message : String(error);
@@ -466,6 +470,10 @@ export function createSandboxTools(thread: BotThread) {
         }
       }
     },
+    toModelOutput: ({ output }) => ({
+      type: "text" as const,
+      value: typeof output === "string" ? output : output.summary,
+    }),
   });
 
   return { runPythonCode };

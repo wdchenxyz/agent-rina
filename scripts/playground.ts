@@ -1,6 +1,6 @@
 /**
  * CLI playground for interacting with the Rina agent directly.
- * Bypasses Slack/Telegram — calls handleQuery with a mock BotThread.
+ * Bypasses Slack/Telegram — calls runAgent + deliverToChat with a mock BotThread.
  *
  * Usage:
  *   pnpm pg                  # interactive REPL
@@ -13,7 +13,8 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 
 import type { ModelMessage, UserContent } from "ai";
-import { handleQuery } from "../lib/rina/agent";
+import { runAgent } from "../lib/rina/agent";
+import { deliverToChat } from "../lib/rina/delivery";
 import type { BotThread } from "../lib/rina/types";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +28,7 @@ const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
 // ---------------------------------------------------------------------------
-// Mock BotThread — minimal implementation for handleQuery
+// Mock BotThread — minimal implementation for deliverToChat
 // ---------------------------------------------------------------------------
 
 function createCliThread(): BotThread {
@@ -35,7 +36,7 @@ function createCliThread(): BotThread {
     adapter: { name: "cli" },
 
     /**
-     * post() handles three call signatures used by handleQuery + tools:
+     * post() handles three call signatures used by deliverToChat:
      *  1. { markdown: string, files?: ... }  — text message (optionally with files)
      *  2. AsyncIterable<string>              — streaming text chunks
      *  3. string                             — plain string
@@ -93,7 +94,7 @@ function createCliThread(): BotThread {
     },
   };
 
-  // Cast — we only implement the subset handleQuery actually uses
+  // Cast — we only implement the subset deliverToChat actually uses
   return thread as unknown as BotThread;
 }
 
@@ -167,9 +168,10 @@ async function runQuery(text: string): Promise<void> {
   const pastHistory = history.slice(0, -1); // exclude current message
 
   try {
-    await handleQuery(thread, `[user: @playground (CLI)] ${text}`, {
+    const stream = await runAgent(`[user: @playground (CLI)] ${text}`, {
       history: pastHistory.length > 0 ? pastHistory : undefined,
     });
+    await deliverToChat(stream, thread);
   } catch (err) {
     console.error(`${YELLOW}[error]${RESET}`, err instanceof Error ? err.message : err);
   }

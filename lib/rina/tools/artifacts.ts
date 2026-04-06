@@ -4,8 +4,6 @@ import path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 
-import type { BotThread } from "../types";
-
 const ARTIFACTS_DIR = process.env.VERCEL
   ? path.join("/tmp", "artifacts")
   : path.resolve("artifacts");
@@ -64,10 +62,28 @@ async function recursiveList(dir: string, base: string): Promise<string[]> {
   return results;
 }
 
+/** Structured result returned by tools that want the delivery layer to upload a file. */
+export interface FileUploadResult {
+  _type: "file-upload";
+  caption: string;
+  filename: string;
+  mimeType: string;
+  /** Base64-encoded file data */
+  dataBase64: string;
+}
+
+export function isFileUploadResult(value: unknown): value is FileUploadResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as FileUploadResult)._type === "file-upload"
+  );
+}
+
 /**
  * Creates tools for listing and uploading files from the artifacts/ directory.
  */
-export function createArtifactTools(thread: BotThread) {
+export function createArtifactTools() {
   const listArtifacts = tool({
     description:
       "List all files in the artifacts/ directory. " +
@@ -114,7 +130,7 @@ export function createArtifactTools(thread: BotThread) {
         .optional()
         .describe("Optional caption to display with the file"),
     }),
-    execute: async ({ path: artifactPath, caption }) => {
+    execute: async ({ path: artifactPath, caption }): Promise<string | FileUploadResult> => {
       let resolved: string;
       try {
         resolved = guardPath(artifactPath);
@@ -143,15 +159,20 @@ export function createArtifactTools(thread: BotThread) {
       const data = await fs.readFile(resolved);
       const filename = path.basename(artifactPath);
 
-      // markdown must be non-empty: chat SDK requires a text field, and
-      // Slack's chat.postMessage rejects empty text.
-      await thread.post({
-        markdown: caption || filename,
-        files: [{ data, filename, mimeType }],
-      });
-
-      return `Uploaded ${filename} to chat.`;
+      return {
+        _type: "file-upload",
+        caption: caption || filename,
+        filename,
+        mimeType,
+        dataBase64: data.toString("base64"),
+      };
     },
+    toModelOutput: ({ output }) => ({
+      type: "text" as const,
+      value: typeof output === "string"
+        ? output
+        : `Uploaded ${output.filename} to chat.`,
+    }),
   });
 
   const downloadFile = tool({

@@ -8,104 +8,21 @@ import {
 } from "ai";
 import { resolve } from "path";
 
-import { SYSTEM_PROMPT, TOOL_STATUS } from "./constants";
+import { SYSTEM_PROMPT } from "./constants";
 import type { ThreadLogger } from "./logger";
 import { createArtifactTools } from "./tools/artifacts";
 import { createArxivTools } from "./tools/arxiv";
 import { createSandboxTools } from "./tools/sandbox";
 import { webTools } from "./tools/web";
-import type { BotThread } from "./types";
 
 const MAX_STEPS = 20;
-const RETRY_DELAYS_MS = [400, 1200, 2500];
-const TELEGRAM_MAX_LENGTH = 4000;
 
-// --- Helpers ---
+// --- Stream part type (simplified from AI SDK's TextStreamPart) ---
 
-function splitLongText(text: string): string[] {
-  if (text.length <= TELEGRAM_MAX_LENGTH) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > TELEGRAM_MAX_LENGTH) {
-    const slice = remaining.slice(0, TELEGRAM_MAX_LENGTH);
-    let splitAt = slice.lastIndexOf("\n\n");
-    if (splitAt < TELEGRAM_MAX_LENGTH / 2) splitAt = slice.lastIndexOf("\n");
-    if (splitAt < TELEGRAM_MAX_LENGTH / 2) splitAt = TELEGRAM_MAX_LENGTH;
-    chunks.push(remaining.slice(0, splitAt).trimEnd());
-    remaining = remaining.slice(splitAt).trimStart();
-  }
-
-  if (remaining.trim().length > 0) chunks.push(remaining);
-  return chunks;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function isRetryableNetworkError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const withCode = error as Error & {
-    code?: string;
-    cause?: { code?: string };
-    originalError?: { code?: string };
-  };
-  const message = error.message.toLowerCase();
-  return (
-    withCode.code === "NETWORK_ERROR" ||
-    withCode.cause?.code === "UND_ERR_CONNECT_TIMEOUT" ||
-    withCode.originalError?.code === "UND_ERR_CONNECT_TIMEOUT" ||
-    message.includes("network error") ||
-    message.includes("connect timeout")
-  );
-}
-
-async function postWithRetry(
-  thread: BotThread,
-  content: string,
-): Promise<void> {
-  let attempt = 0;
-  while (true) {
-    try {
-      await thread.post({ markdown: content });
-      return;
-    } catch (error) {
-      if (
-        attempt >= RETRY_DELAYS_MS.length ||
-        !isRetryableNetworkError(error)
-      ) {
-        throw error;
-      }
-      await sleep(RETRY_DELAYS_MS[attempt]);
-      attempt += 1;
-    }
-  }
-}
-
-async function postToolStatus(
-  thread: BotThread,
-  part: StreamPart,
-): Promise<void> {
-  if (part.type !== "tool-input-start" || !part.toolName) return;
-
-  console.log(`[rina] tool: ${part.toolName}`);
-  const status = TOOL_STATUS[part.toolName];
-  if (status) {
-    await postWithRetry(thread, `> ${status}`);
-  }
-}
-
-async function postBufferedText(
-  thread: BotThread,
-  text: string,
-): Promise<void> {
-  if (text.trim().length === 0) return;
-
-  for (const chunk of splitLongText(text)) {
-    await postWithRetry(thread, chunk);
-  }
+export interface StreamPart {
+  type: string;
+  text?: string;
+  toolName?: string;
 }
 
 // --- Lazy bash/skill tool setup ---
@@ -155,84 +72,11 @@ function getBashAndSkillTools(): Promise<Record<string, unknown>> {
   return bashToolsPromise;
 }
 
-// --- Stream part type (simplified from AI SDK's TextStreamPart) ---
-
-interface StreamPart {
-  type: string;
-  text?: string;
-  toolName?: string;
-}
-
-type TextStreamBridge = ReturnType<typeof createTextStreamBridge>;
-type TextBlockStreamHandlers = {
-  onTextStart?: () => Promise<void> | void;
-  onTextDelta?: (text: string) => Promise<void> | void;
-  onTextEnd?: () => Promise<void> | void;
-};
-
-async function consumeTextBlocks(
-  fullStream: AsyncIterable<StreamPart>,
-  thread: BotThread,
-  handlers: TextBlockStreamHandlers,
-): Promise<void> {
-  for await (const part of fullStream) {
-    if (part.type === "text-start") {
-      await handlers.onTextStart?.();
-    }
-
-    if (part.type === "text-delta" && part.text) {
-      await handlers.onTextDelta?.(part.text);
-    }
-
-    if (part.type === "text-end") {
-      await handlers.onTextEnd?.();
-    }
-
-    await postToolStatus(thread, part);
-  }
-}
-
-function createTextStreamBridge(): {
-  stream: AsyncGenerator<string>;
-  push: (chunk: string) => void;
-  close: () => void;
-} {
-  const state = {
-    chunks: [] as string[],
-    resolve: null as (() => void) | null,
-    done: false,
-  };
-
-  async function* stream(): AsyncGenerator<string> {
-    while (true) {
-      while (state.chunks.length > 0) {
-        yield state.chunks.shift()!;
-      }
-      if (state.done) return;
-      await new Promise<void>((resolve) => {
-        state.resolve = resolve;
-      });
-    }
-  }
-
-  return {
-    stream: stream(),
-    push(chunk: string) {
-      state.chunks.push(chunk);
-      state.resolve?.();
-    },
-    close() {
-      state.done = true;
-      state.resolve?.();
-    },
-  };
-}
-
 // --- Stream logging wrapper ---
 // Taps into the stream to log tool calls, results, and text blocks without
-// altering what downstream consumers (streamToChat / bufferToChat) see.
+// altering what downstream consumers see.
 
-async function* withLogging(
+export async function* withLogging(
   stream: AsyncIterable<StreamPart>,
   logger: ThreadLogger,
 ): AsyncGenerator<StreamPart> {
@@ -283,81 +127,18 @@ async function* withLogging(
   }
 }
 
-// --- Streaming response (Slack) ---
-// Pipes text chunks to thread.post(asyncIterable) for real-time streaming.
+// --- Main agent entry point (pure cognitive engine) ---
 
-async function streamToChat(
-  fullStream: AsyncIterable<StreamPart>,
-  thread: BotThread,
-): Promise<void> {
-  let bridge: TextStreamBridge | null = null;
-  let currentPost: Promise<unknown> | null = null;
-
-  await consumeTextBlocks(fullStream, thread, {
-    onTextStart() {
-      bridge = createTextStreamBridge();
-      currentPost = thread.post(bridge.stream);
-    },
-    onTextDelta(text) {
-      bridge?.push(text);
-    },
-    async onTextEnd() {
-      if (!bridge) return;
-      bridge.close();
-      await currentPost;
-      currentPost = null;
-      bridge = null;
-    },
-  });
-
-  // Safety: close any unclosed stream
-  const openBridge = bridge as unknown as TextStreamBridge | null;
-  if (openBridge) {
-    openBridge.close();
-    await currentPost;
-  }
-}
-
-// --- Buffered response (Telegram) ---
-// Collects full text blocks, splits at message length limits, posts sequentially.
-
-async function bufferToChat(
-  fullStream: AsyncIterable<StreamPart>,
-  thread: BotThread,
-): Promise<void> {
-  let currentTextBlock = "";
-
-  await consumeTextBlocks(fullStream, thread, {
-    onTextStart() {
-      currentTextBlock = "";
-    },
-    onTextDelta(text) {
-      currentTextBlock += text;
-    },
-    async onTextEnd() {
-      await postBufferedText(thread, currentTextBlock);
-      currentTextBlock = "";
-    },
-  });
-
-  // Post any remaining text
-  await postBufferedText(thread, currentTextBlock);
-}
-
-// --- Main agent entry point ---
-
-export async function handleQuery(
-  thread: BotThread,
+export async function runAgent(
   content: UserContent,
   opts: { prelude?: string; history?: ModelMessage[]; logger?: ThreadLogger } = {},
-): Promise<void> {
-  const shouldStream = thread.adapter.name !== "telegram";
+): Promise<AsyncIterable<StreamPart>> {
   const { logger } = opts;
 
-  // Build tools
-  const arxivTools = createArxivTools(thread);
-  const artifactTools = createArtifactTools(thread);
-  const sandboxTools = createSandboxTools(thread);
+  // Build tools — no thread dependency
+  const arxivTools = createArxivTools();
+  const artifactTools = createArtifactTools();
+  const sandboxTools = createSandboxTools();
   const extraTools = await getBashAndSkillTools();
   const allTools = {
     ...arxivTools,
@@ -383,7 +164,7 @@ export async function handleQuery(
   messages.push({ role: "user", content });
 
   // Debug: log message structure
-  console.log(`[rina:image-debug] handleQuery: ${messages.length} messages total`);
+  console.log(`[rina:image-debug] runAgent: ${messages.length} messages total`);
   for (const [i, msg] of messages.entries()) {
     if (typeof msg.content === "string") {
       console.log(`[rina:image-debug]   [${i}] role=${msg.role}, content="${msg.content.slice(0, 80)}"`);
@@ -401,13 +182,5 @@ export async function handleQuery(
 
   // Cast fullStream to simplified type to avoid deep generics issues
   const rawStream = result.fullStream as unknown as AsyncIterable<StreamPart>;
-  const stream = logger ? withLogging(rawStream, logger) : rawStream;
-
-  if (shouldStream) {
-    await streamToChat(stream, thread);
-  } else {
-    await bufferToChat(stream, thread);
-  }
-
-  await logger?.flush();
+  return logger ? withLogging(rawStream, logger) : rawStream;
 }
