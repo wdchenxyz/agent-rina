@@ -70,7 +70,7 @@ async function runAssistant(
   if (warnings.length > 0) {
     await thread.post({ markdown: warnings.map((w) => `> ${w}`).join("\n") });
   }
-  const stream = await runAgent(content, opts);
+  const stream = await runAgent(content, { ...opts, platform: thread.adapter.name });
   await deliverToChat(stream, thread);
   await opts.logger?.flush();
 }
