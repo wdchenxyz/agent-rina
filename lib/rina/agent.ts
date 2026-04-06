@@ -8,7 +8,7 @@ import {
 } from "ai";
 import { resolve } from "path";
 
-import { SYSTEM_PROMPT } from "./constants";
+import { SYSTEM_PROMPT, mentionInstructions } from "./constants";
 import type { ThreadLogger } from "./logger";
 import { createArtifactTools } from "./tools/artifacts";
 import { createArxivTools } from "./tools/arxiv";
@@ -131,7 +131,7 @@ export async function* withLogging(
 
 export async function runAgent(
   content: UserContent,
-  opts: { prelude?: string; history?: ModelMessage[]; logger?: ThreadLogger } = {},
+  opts: { prelude?: string; history?: ModelMessage[]; logger?: ThreadLogger; platform?: string } = {},
 ): Promise<AsyncIterable<StreamPart>> {
   const { logger } = opts;
 
@@ -151,7 +151,7 @@ export async function runAgent(
   const agent = new ToolLoopAgent({
     // model: gateway("anthropic/claude-sonnet-4-6"),
     model: gateway("openai/gpt-5.2"),
-    instructions: SYSTEM_PROMPT,
+    instructions: SYSTEM_PROMPT + mentionInstructions(opts.platform ?? "slack"),
     tools: allTools,
     stopWhen: stepCountIs(MAX_STEPS),
   });
