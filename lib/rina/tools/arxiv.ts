@@ -6,7 +6,7 @@ import { tool } from "ai";
 import { extract as tarExtract } from "tar";
 import { z } from "zod";
 
-import { encodeFileUpload } from "./artifacts";
+import type { FileUploadResult } from "./artifacts";
 
 const PAPERS_DIR = process.env.VERCEL
   ? path.join("/tmp", "artifacts/papers")
@@ -256,7 +256,7 @@ export function createArxivTools() {
         .optional()
         .describe("Caption to display with the figure"),
     }),
-    execute: async ({ paper_id, file_path, caption }) => {
+    execute: async ({ paper_id, file_path, caption }): Promise<string | FileUploadResult> => {
       let resolved: string;
       try {
         resolved = guardPath(paper_id, file_path);
@@ -285,13 +285,20 @@ export function createArxivTools() {
       const data = await fs.readFile(resolved);
       const filename = path.basename(file_path);
 
-      return encodeFileUpload({
+      return {
+        _type: "file-upload",
         caption: caption || filename,
         filename,
         mimeType,
         dataBase64: data.toString("base64"),
-      });
+      };
     },
+    toModelOutput: ({ output }) => ({
+      type: "text" as const,
+      value: typeof output === "string"
+        ? output
+        : `Uploaded ${output.filename} to chat.`,
+    }),
   });
 
   return {

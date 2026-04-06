@@ -62,10 +62,9 @@ async function recursiveList(dir: string, base: string): Promise<string[]> {
   return results;
 }
 
-/** Marker prefix returned by tools that want the delivery layer to upload a file. */
-export const FILE_UPLOAD_MARKER = "@@FILE_UPLOAD@@";
-
+/** Structured result returned by tools that want the delivery layer to upload a file. */
 export interface FileUploadResult {
+  _type: "file-upload";
   caption: string;
   filename: string;
   mimeType: string;
@@ -73,16 +72,12 @@ export interface FileUploadResult {
   dataBase64: string;
 }
 
-export function encodeFileUpload(result: FileUploadResult): string {
-  return FILE_UPLOAD_MARKER + JSON.stringify(result);
-}
-
-export function isFileUpload(text: string): boolean {
-  return text.startsWith(FILE_UPLOAD_MARKER);
-}
-
-export function decodeFileUpload(text: string): FileUploadResult {
-  return JSON.parse(text.slice(FILE_UPLOAD_MARKER.length)) as FileUploadResult;
+export function isFileUploadResult(value: unknown): value is FileUploadResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as FileUploadResult)._type === "file-upload"
+  );
 }
 
 /**
@@ -135,7 +130,7 @@ export function createArtifactTools() {
         .optional()
         .describe("Optional caption to display with the file"),
     }),
-    execute: async ({ path: artifactPath, caption }) => {
+    execute: async ({ path: artifactPath, caption }): Promise<string | FileUploadResult> => {
       let resolved: string;
       try {
         resolved = guardPath(artifactPath);
@@ -164,13 +159,20 @@ export function createArtifactTools() {
       const data = await fs.readFile(resolved);
       const filename = path.basename(artifactPath);
 
-      return encodeFileUpload({
+      return {
+        _type: "file-upload",
         caption: caption || filename,
         filename,
         mimeType,
         dataBase64: data.toString("base64"),
-      });
+      };
     },
+    toModelOutput: ({ output }) => ({
+      type: "text" as const,
+      value: typeof output === "string"
+        ? output
+        : `Uploaded ${output.filename} to chat.`,
+    }),
   });
 
   const downloadFile = tool({

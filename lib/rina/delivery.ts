@@ -1,5 +1,5 @@
 import { TOOL_STATUS } from "./constants";
-import { isFileUpload, decodeFileUpload } from "./tools/artifacts";
+import { isFileUploadResult, type FileUploadResult } from "./tools/artifacts";
 import type { StreamPart } from "./agent";
 import type { BotThread } from "./types";
 
@@ -96,10 +96,21 @@ async function postBufferedText(
 
 // --- File upload interception ---
 
+async function postFileUpload(
+  upload: FileUploadResult,
+  thread: BotThread,
+): Promise<void> {
+  const data = Buffer.from(upload.dataBase64, "base64");
+  await thread.post({
+    markdown: upload.caption,
+    files: [{ data, filename: upload.filename, mimeType: upload.mimeType }],
+  });
+}
+
 /**
- * Check tool-result parts for file upload markers. If found, post the file
- * to the chat thread. This replaces the old pattern where tools called
- * thread.post() directly.
+ * Check tool-result parts for structured file upload outputs. Tools return
+ * typed FileUploadResult objects (single or in an array) — the delivery
+ * layer intercepts them and posts files to chat.
  */
 async function handleToolResultUploads(
   part: StreamPart,
@@ -107,23 +118,27 @@ async function handleToolResultUploads(
 ): Promise<void> {
   if (part.type !== "tool-result") return;
 
-  const raw = (part as StreamPart & { output?: unknown; result?: unknown }).output
+  const raw = (part as StreamPart & { output?: unknown }).output
     ?? (part as StreamPart & { result?: unknown }).result;
 
-  if (typeof raw !== "string") return;
+  // Single file upload (artifacts, arxiv)
+  if (isFileUploadResult(raw)) {
+    await postFileUpload(raw, thread);
+    return;
+  }
 
-  // A single tool result may contain multiple file upload markers (e.g. sandbox)
-  const lines = raw.split("\n\n");
-  for (const line of lines) {
-    if (!isFileUpload(line)) continue;
-
-    const upload = decodeFileUpload(line);
-    const data = Buffer.from(upload.dataBase64, "base64");
-
-    await thread.post({
-      markdown: upload.caption,
-      files: [{ data, filename: upload.filename, mimeType: upload.mimeType }],
-    });
+  // Structured result with files array (sandbox)
+  if (
+    typeof raw === "object" &&
+    raw !== null &&
+    "files" in raw &&
+    Array.isArray((raw as { files: unknown }).files)
+  ) {
+    for (const file of (raw as { files: unknown[] }).files) {
+      if (isFileUploadResult(file)) {
+        await postFileUpload(file, thread);
+      }
+    }
   }
 }
 
@@ -262,7 +277,7 @@ async function bufferToChat(
 /**
  * Deliver an agent stream to a chat thread.
  * Chooses streaming (Slack) or buffered (Telegram) mode based on the adapter.
- * Intercepts file upload markers from tool results and posts them as attachments.
+ * Intercepts structured file upload results from tools and posts them as attachments.
  */
 export async function deliverToChat(
   stream: AsyncIterable<StreamPart>,

@@ -4,7 +4,7 @@ import path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 
-import { encodeFileUpload } from "./artifacts";
+import type { FileUploadResult } from "./artifacts";
 
 // --- Constants ---
 
@@ -351,7 +351,7 @@ export function createSandboxTools() {
 
         // --- 5. Retrieve output files ---
         const retrievedFiles: string[] = [];
-        const fileUploadMarkers: string[] = [];
+        const uploads: FileUploadResult[] = [];
 
         if (outputFiles && outputFiles.length > 0) {
           await fs.mkdir(ARTIFACTS_DIR, { recursive: true });
@@ -377,7 +377,7 @@ export function createSandboxTools() {
               await fs.writeFile(localPath, buffer);
               retrievedFiles.push(path.basename(filename));
 
-              // Encode file upload for delivery layer
+              // Build file upload for delivery layer
               const ext = path.extname(filename).slice(1).toLowerCase();
               const mimeMap: Record<string, string> = {
                 png: "image/png",
@@ -392,14 +392,13 @@ export function createSandboxTools() {
               };
               const mimeType = mimeMap[ext] || "application/octet-stream";
 
-              fileUploadMarkers.push(
-                encodeFileUpload({
-                  caption: path.basename(filename),
-                  filename: path.basename(filename),
-                  mimeType,
-                  dataBase64: buffer.toString("base64"),
-                }),
-              );
+              uploads.push({
+                _type: "file-upload",
+                caption: path.basename(filename),
+                filename: path.basename(filename),
+                mimeType,
+                dataBase64: buffer.toString("base64"),
+              });
 
               console.log(
                 `[rina:sandbox] retrieved: ${filename} (${(buffer.length / 1024).toFixed(1)} KB)`,
@@ -413,7 +412,7 @@ export function createSandboxTools() {
           }
         }
 
-        // --- 6. Build result for the LLM ---
+        // --- 6. Build result ---
         const parts: string[] = [];
 
         if (result.exitCode !== 0) {
@@ -441,16 +440,17 @@ export function createSandboxTools() {
           );
         }
 
-        // Append file upload markers for the delivery layer
-        for (const marker of fileUploadMarkers) {
-          parts.push(marker);
-        }
-
         console.log(
           `[rina:sandbox] total execution time: ${elapsed(tTotal)}`,
         );
 
-        return parts.join("\n\n");
+        const summary = parts.join("\n\n");
+
+        // Return structured result with files if any, plain string otherwise
+        if (uploads.length > 0) {
+          return { summary, files: uploads };
+        }
+        return summary;
       } catch (error) {
         const message =
           error instanceof Error ? error.message : String(error);
@@ -470,6 +470,10 @@ export function createSandboxTools() {
         }
       }
     },
+    toModelOutput: ({ output }) => ({
+      type: "text" as const,
+      value: typeof output === "string" ? output : output.summary,
+    }),
   });
 
   return { runPythonCode };
