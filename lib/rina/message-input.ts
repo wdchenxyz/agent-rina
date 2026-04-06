@@ -23,6 +23,7 @@ type MediaPart = ImagePart | FilePart;
 
 /** Any part we put inside a UserContent array. */
 type ContentPart = TextPart | MediaPart;
+type Attachment = NonNullable<IncomingMessage["attachments"]>[number];
 
 function getFileExtension(value: string): string | null {
   const match = /\.([a-zA-Z0-9]+)$/.exec(value);
@@ -45,12 +46,51 @@ function isSupportedMime(mime: string | undefined): boolean {
   return mime.startsWith("image/") || SUPPORTED_FILE_MIMES.has(mime);
 }
 
+function getSupportedAttachments(message: IncomingMessage): Attachment[] {
+  return (message.attachments ?? []).filter(
+    (attachment) =>
+      isSupportedMime(attachment.mimeType) || attachment.type === "image",
+  );
+}
+
+function toContentParts(content: UserContent): ContentPart[] {
+  return typeof content === "string"
+    ? [{ type: "text", text: content }]
+    : [...content];
+}
+
+function mergeAdjacentMessages(history: ModelMessage[]): ModelMessage[] {
+  const merged: ModelMessage[] = [];
+
+  for (const msg of history) {
+    const prev = merged[merged.length - 1];
+    if (!prev || prev.role !== msg.role) {
+      merged.push({ ...msg });
+      continue;
+    }
+
+    if (msg.role === "user") {
+      prev.content = [
+        ...toContentParts(prev.content as UserContent),
+        ...toContentParts(msg.content as UserContent),
+      ] as UserContent;
+      continue;
+    }
+
+    const prevText = typeof prev.content === "string" ? prev.content : "";
+    const curText = typeof msg.content === "string" ? msg.content : "";
+    prev.content = [prevText, curText].filter(Boolean).join("\n\n");
+  }
+
+  return merged;
+}
+
 // ---------------------------------------------------------------------------
 // Attachment reading
 // ---------------------------------------------------------------------------
 
 async function readAttachmentData(
-  attachment: IncomingMessage["attachments"][number],
+  attachment: Attachment,
 ): Promise<Buffer | null> {
   if (attachment.data instanceof Buffer) return attachment.data;
   if (attachment.data instanceof Blob) {
@@ -69,7 +109,7 @@ async function readAttachmentData(
  * Returns `null` when the attachment is unsupported, too large, or unreadable.
  */
 async function attachmentToMediaPart(
-  attachment: IncomingMessage["attachments"][number],
+  attachment: Attachment,
 ): Promise<MediaPart | null> {
   const data = await readAttachmentData(attachment);
   if (!data) return null;
@@ -106,6 +146,73 @@ async function attachmentToMediaPart(
   return null; // unsupported type
 }
 
+type CollectMediaOptions = {
+  onSkipped?: (attachment: Attachment, index: number) => void;
+  onSuccess?: (attachment: Attachment, part: MediaPart, index: number) => void;
+  onError?: (attachment: Attachment, index: number, error: unknown) => void;
+};
+
+async function collectMediaParts(
+  attachments: Attachment[],
+  options: CollectMediaOptions = {},
+): Promise<MediaPart[]> {
+  const parts: MediaPart[] = [];
+
+  for (const [index, attachment] of attachments
+    .slice(0, MAX_INBOUND_ATTACHMENTS)
+    .entries()) {
+    try {
+      const part = await attachmentToMediaPart(attachment);
+      if (!part) {
+        options.onSkipped?.(attachment, index);
+        continue;
+      }
+
+      options.onSuccess?.(attachment, part, index);
+      parts.push(part);
+    } catch (error) {
+      options.onError?.(attachment, index, error);
+    }
+  }
+
+  return parts;
+}
+
+function createUserHistoryMessage(
+  text: string,
+  author: IncomingMessage["author"],
+  mediaParts: MediaPart[],
+): ModelMessage {
+  const labeledText = (authorPrefix(author) + text).trim();
+  if (mediaParts.length === 0) {
+    return {
+      role: "user",
+      content: labeledText || "(empty message)",
+    };
+  }
+
+  return {
+    role: "user",
+    content: [
+      { type: "text", text: labeledText || "See attached file(s)." },
+      ...mediaParts,
+    ],
+  };
+}
+
+function createBotFileContextMessage(mediaParts: MediaPart[]): ModelMessage {
+  return {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: "[This is the file you just posted to the chat.]",
+      },
+      ...mediaParts,
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // buildPromptFromMessage — current message → UserContent
 // ---------------------------------------------------------------------------
@@ -130,9 +237,7 @@ export async function buildPromptFromMessage(
 ): Promise<{ content: UserContent; warnings: string[] }> {
   const prefix = authorPrefix(message.author);
   const text = (prefix + (message.text?.trim() ?? "")).trim();
-  const supportedAttachments = (message.attachments ?? []).filter((a) =>
-    isSupportedMime(a.mimeType) || a.type === "image",
-  );
+  const supportedAttachments = getSupportedAttachments(message);
 
   console.log(
     `[rina:image-debug] buildPromptFromMessage: text="${text}", total attachments=${message.attachments?.length ?? 0}, supported attachments=${supportedAttachments.length}`,
@@ -152,27 +257,30 @@ export async function buildPromptFromMessage(
     { type: "text", text: text || "Please analyze the attached file(s)." },
   ];
 
-  for (const [index, attachment] of supportedAttachments
-    .slice(0, MAX_INBOUND_ATTACHMENTS)
-    .entries()) {
-    try {
-      const part = await attachmentToMediaPart(attachment);
-      if (!part) {
+  parts.push(
+    ...(await collectMediaParts(supportedAttachments, {
+      onSkipped: (attachment, index) => {
         console.log(
           `[rina:image-debug]   attachment #${index + 1}: unsupported or unreadable (name=${attachment.name}, mime=${attachment.mimeType})`,
         );
-        warnings.push(`Couldn't read attachment #${index + 1} (${attachment.name ?? "unknown"}); skipped it.`);
-        continue;
-      }
-      console.log(
-        `[rina:image-debug]   attachment #${index + 1}: OK, type=${part.type}, name=${attachment.name}`,
-      );
-      parts.push(part);
-    } catch (err) {
-      console.error(`[rina:image-debug]   attachment #${index + 1}: error downloading`, err);
-      warnings.push(`Couldn't process attachment #${index + 1}; skipped it.`);
-    }
-  }
+        warnings.push(
+          `Couldn't read attachment #${index + 1} (${attachment.name ?? "unknown"}); skipped it.`,
+        );
+      },
+      onSuccess: (attachment, part, index) => {
+        console.log(
+          `[rina:image-debug]   attachment #${index + 1}: OK, type=${part.type}, name=${attachment.name}`,
+        );
+      },
+      onError: (_attachment, index, err) => {
+        console.error(
+          `[rina:image-debug]   attachment #${index + 1}: error downloading`,
+          err,
+        );
+        warnings.push(`Couldn't process attachment #${index + 1}; skipped it.`);
+      },
+    })),
+  );
 
   if (supportedAttachments.length > MAX_INBOUND_ATTACHMENTS) {
     warnings.push(
@@ -204,21 +312,7 @@ export async function buildPromptFromMessage(
 async function extractMediaParts(
   message: IncomingMessage,
 ): Promise<MediaPart[]> {
-  const candidates = (message.attachments ?? []).filter(
-    (a) => isSupportedMime(a.mimeType) || a.type === "image",
-  );
-  const parts: MediaPart[] = [];
-
-  for (const attachment of candidates.slice(0, MAX_INBOUND_ATTACHMENTS)) {
-    try {
-      const part = await attachmentToMediaPart(attachment);
-      if (part) parts.push(part);
-    } catch {
-      // Skip unreadable attachments silently in history
-    }
-  }
-
-  return parts;
+  return collectMediaParts(getSupportedAttachments(message));
 }
 
 // ---------------------------------------------------------------------------
@@ -265,71 +359,23 @@ export async function convertThreadHistory(
         console.log(
           `[rina:image-debug]   -> bot msg has ${botMediaParts.length} file(s), injecting as user context`,
         );
-        history.push({
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "[This is the file you just posted to the chat.]",
-            },
-            ...botMediaParts,
-          ],
-        });
+        history.push(createBotFileContextMessage(botMediaParts));
       }
     } else {
       // Other users' messages → user role with optional media
       const mediaParts = await extractMediaParts(msg);
-      const prefix = authorPrefix(msg.author);
-      const labeledText = (prefix + text).trim();
 
       console.log(
         `[rina:image-debug]   -> user msg added with ${mediaParts.length} file(s)`,
       );
-
-      if (mediaParts.length > 0) {
-        history.push({
-          role: "user",
-          content: [
-            { type: "text", text: labeledText || "See attached file(s)." },
-            ...mediaParts,
-          ],
-        });
-      } else {
-        history.push({
-          role: "user",
-          content: labeledText || "(empty message)",
-        });
-      }
+      history.push(createUserHistoryMessage(text, msg.author, mediaParts));
     }
   }
 
   // Anthropic requires strictly alternating user/assistant roles.
   // Merge consecutive same-role messages to avoid API errors (e.g. when a
   // synthetic user file message is followed by a real user message).
-  const merged: ModelMessage[] = [];
-  for (const msg of history) {
-    const prev = merged[merged.length - 1];
-    if (prev && prev.role === msg.role && prev.role === "user") {
-      const prevParts: ContentPart[] =
-        typeof prev.content === "string"
-          ? [{ type: "text" as const, text: prev.content }]
-          : (prev.content as ContentPart[]);
-      const curParts: ContentPart[] =
-        typeof msg.content === "string"
-          ? [{ type: "text" as const, text: msg.content }]
-          : (msg.content as ContentPart[]);
-      prev.content = [...prevParts, ...curParts] as UserContent;
-    } else if (prev && prev.role === msg.role && prev.role === "assistant") {
-      // Merge consecutive assistant text messages
-      const prevText =
-        typeof prev.content === "string" ? prev.content : "";
-      const curText =
-        typeof msg.content === "string" ? msg.content : "";
-      prev.content = [prevText, curText].filter(Boolean).join("\n\n");
-    } else {
-      merged.push({ ...msg });
-    }
-  }
+  const merged = mergeAdjacentMessages(history);
 
   console.log(
     `[rina:image-debug] convertThreadHistory: ${merged.length} messages total (${history.length} before merge)`,

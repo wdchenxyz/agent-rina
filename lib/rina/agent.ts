@@ -84,6 +84,30 @@ async function postWithRetry(
   }
 }
 
+async function postToolStatus(
+  thread: BotThread,
+  part: StreamPart,
+): Promise<void> {
+  if (part.type !== "tool-input-start" || !part.toolName) return;
+
+  console.log(`[rina] tool: ${part.toolName}`);
+  const status = TOOL_STATUS[part.toolName];
+  if (status) {
+    await postWithRetry(thread, `> ${status}`);
+  }
+}
+
+async function postBufferedText(
+  thread: BotThread,
+  text: string,
+): Promise<void> {
+  if (text.trim().length === 0) return;
+
+  for (const chunk of splitLongText(text)) {
+    await postWithRetry(thread, chunk);
+  }
+}
+
 // --- Lazy bash/skill tool setup ---
 
 let bashToolsPromise: Promise<Record<string, unknown>> | null = null;
@@ -137,6 +161,71 @@ interface StreamPart {
   type: string;
   text?: string;
   toolName?: string;
+}
+
+type TextStreamBridge = ReturnType<typeof createTextStreamBridge>;
+type TextBlockStreamHandlers = {
+  onTextStart?: () => Promise<void> | void;
+  onTextDelta?: (text: string) => Promise<void> | void;
+  onTextEnd?: () => Promise<void> | void;
+};
+
+async function consumeTextBlocks(
+  fullStream: AsyncIterable<StreamPart>,
+  thread: BotThread,
+  handlers: TextBlockStreamHandlers,
+): Promise<void> {
+  for await (const part of fullStream) {
+    if (part.type === "text-start") {
+      await handlers.onTextStart?.();
+    }
+
+    if (part.type === "text-delta" && part.text) {
+      await handlers.onTextDelta?.(part.text);
+    }
+
+    if (part.type === "text-end") {
+      await handlers.onTextEnd?.();
+    }
+
+    await postToolStatus(thread, part);
+  }
+}
+
+function createTextStreamBridge(): {
+  stream: AsyncGenerator<string>;
+  push: (chunk: string) => void;
+  close: () => void;
+} {
+  const state = {
+    chunks: [] as string[],
+    resolve: null as (() => void) | null,
+    done: false,
+  };
+
+  async function* stream(): AsyncGenerator<string> {
+    while (true) {
+      while (state.chunks.length > 0) {
+        yield state.chunks.shift()!;
+      }
+      if (state.done) return;
+      await new Promise<void>((resolve) => {
+        state.resolve = resolve;
+      });
+    }
+  }
+
+  return {
+    stream: stream(),
+    push(chunk: string) {
+      state.chunks.push(chunk);
+      state.resolve?.();
+    },
+    close() {
+      state.done = true;
+      state.resolve?.();
+    },
+  };
 }
 
 // --- Stream logging wrapper ---
@@ -201,59 +290,30 @@ async function streamToChat(
   fullStream: AsyncIterable<StreamPart>,
   thread: BotThread,
 ): Promise<void> {
-  // Shared state for the async generator bridge
-  const state = {
-    chunks: [] as string[],
-    resolve: null as (() => void) | null,
-    done: false,
-  };
-
-  async function* textStream(): AsyncGenerator<string> {
-    while (true) {
-      while (state.chunks.length > 0) yield state.chunks.shift()!;
-      if (state.done) return;
-      await new Promise<void>((r) => {
-        state.resolve = r;
-      });
-    }
-  }
-
+  let bridge: TextStreamBridge | null = null;
   let currentPost: Promise<unknown> | null = null;
-  let inTextBlock = false;
 
-  for await (const part of fullStream) {
-    if (part.type === "text-start") {
-      inTextBlock = true;
-      state.chunks = [];
-      state.done = false;
-      state.resolve = null;
-      currentPost = thread.post(textStream());
-    }
-
-    if (part.type === "text-delta" && inTextBlock && part.text) {
-      state.chunks.push(part.text);
-      state.resolve?.();
-    }
-
-    if (part.type === "text-end" && inTextBlock) {
-      state.done = true;
-      state.resolve?.();
+  await consumeTextBlocks(fullStream, thread, {
+    onTextStart() {
+      bridge = createTextStreamBridge();
+      currentPost = thread.post(bridge.stream);
+    },
+    onTextDelta(text) {
+      bridge?.push(text);
+    },
+    async onTextEnd() {
+      if (!bridge) return;
+      bridge.close();
       await currentPost;
       currentPost = null;
-      inTextBlock = false;
-    }
-
-    if (part.type === "tool-input-start" && part.toolName) {
-      console.log(`[rina] tool: ${part.toolName}`);
-      const status = TOOL_STATUS[part.toolName];
-      if (status) await postWithRetry(thread, `> ${status}`);
-    }
-  }
+      bridge = null;
+    },
+  });
 
   // Safety: close any unclosed stream
-  if (inTextBlock) {
-    state.done = true;
-    state.resolve?.();
+  const openBridge = bridge as unknown as TextStreamBridge | null;
+  if (openBridge) {
+    openBridge.close();
     await currentPost;
   }
 }
@@ -267,37 +327,21 @@ async function bufferToChat(
 ): Promise<void> {
   let currentTextBlock = "";
 
-  for await (const part of fullStream) {
-    if (part.type === "text-start") {
+  await consumeTextBlocks(fullStream, thread, {
+    onTextStart() {
       currentTextBlock = "";
-    }
-
-    if (part.type === "text-delta" && part.text) {
-      currentTextBlock += part.text;
-    }
-
-    if (part.type === "text-end") {
-      if (currentTextBlock.trim().length > 0) {
-        for (const chunk of splitLongText(currentTextBlock)) {
-          await postWithRetry(thread, chunk);
-        }
-      }
+    },
+    onTextDelta(text) {
+      currentTextBlock += text;
+    },
+    async onTextEnd() {
+      await postBufferedText(thread, currentTextBlock);
       currentTextBlock = "";
-    }
-
-    if (part.type === "tool-input-start" && part.toolName) {
-      console.log(`[rina] tool: ${part.toolName}`);
-      const status = TOOL_STATUS[part.toolName];
-      if (status) await postWithRetry(thread, `> ${status}`);
-    }
-  }
+    },
+  });
 
   // Post any remaining text
-  if (currentTextBlock.trim().length > 0) {
-    for (const chunk of splitLongText(currentTextBlock)) {
-      await postWithRetry(thread, chunk);
-    }
-  }
+  await postBufferedText(thread, currentTextBlock);
 }
 
 // --- Main agent entry point ---
