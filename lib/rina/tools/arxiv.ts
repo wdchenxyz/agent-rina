@@ -6,7 +6,7 @@ import { tool } from "ai";
 import { extract as tarExtract } from "tar";
 import { z } from "zod";
 
-import type { BotThread } from "../types";
+import { encodeFileUpload } from "./artifacts";
 
 const PAPERS_DIR = process.env.VERCEL
   ? path.join("/tmp", "artifacts/papers")
@@ -81,7 +81,7 @@ const UPLOADABLE_EXTENSIONS: Record<string, string> = {
 
 // --- Tools ---
 
-export function createArxivTools(thread: BotThread) {
+export function createArxivTools() {
   const downloadArxivSource = tool({
     description:
       "Download and extract LaTeX source files from an arxiv paper. Accepts a paper ID (e.g. 1706.03762) or full arxiv URL.",
@@ -285,14 +285,12 @@ export function createArxivTools(thread: BotThread) {
       const data = await fs.readFile(resolved);
       const filename = path.basename(file_path);
 
-      // markdown must be non-empty: chat SDK requires a text field, and
-      // Slack's chat.postMessage rejects empty text.
-      await thread.post({
-        markdown: caption || filename,
-        files: [{ data, filename, mimeType }],
+      return encodeFileUpload({
+        caption: caption || filename,
+        filename,
+        mimeType,
+        dataBase64: data.toString("base64"),
       });
-
-      return `Uploaded ${filename} to chat.`;
     },
   });
 

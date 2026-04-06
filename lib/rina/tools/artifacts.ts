@@ -4,8 +4,6 @@ import path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 
-import type { BotThread } from "../types";
-
 const ARTIFACTS_DIR = process.env.VERCEL
   ? path.join("/tmp", "artifacts")
   : path.resolve("artifacts");
@@ -64,10 +62,33 @@ async function recursiveList(dir: string, base: string): Promise<string[]> {
   return results;
 }
 
+/** Marker prefix returned by tools that want the delivery layer to upload a file. */
+export const FILE_UPLOAD_MARKER = "@@FILE_UPLOAD@@";
+
+export interface FileUploadResult {
+  caption: string;
+  filename: string;
+  mimeType: string;
+  /** Base64-encoded file data */
+  dataBase64: string;
+}
+
+export function encodeFileUpload(result: FileUploadResult): string {
+  return FILE_UPLOAD_MARKER + JSON.stringify(result);
+}
+
+export function isFileUpload(text: string): boolean {
+  return text.startsWith(FILE_UPLOAD_MARKER);
+}
+
+export function decodeFileUpload(text: string): FileUploadResult {
+  return JSON.parse(text.slice(FILE_UPLOAD_MARKER.length)) as FileUploadResult;
+}
+
 /**
  * Creates tools for listing and uploading files from the artifacts/ directory.
  */
-export function createArtifactTools(thread: BotThread) {
+export function createArtifactTools() {
   const listArtifacts = tool({
     description:
       "List all files in the artifacts/ directory. " +
@@ -143,14 +164,12 @@ export function createArtifactTools(thread: BotThread) {
       const data = await fs.readFile(resolved);
       const filename = path.basename(artifactPath);
 
-      // markdown must be non-empty: chat SDK requires a text field, and
-      // Slack's chat.postMessage rejects empty text.
-      await thread.post({
-        markdown: caption || filename,
-        files: [{ data, filename, mimeType }],
+      return encodeFileUpload({
+        caption: caption || filename,
+        filename,
+        mimeType,
+        dataBase64: data.toString("base64"),
       });
-
-      return `Uploaded ${filename} to chat.`;
     },
   });
 

@@ -4,7 +4,7 @@ import path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 
-import type { BotThread } from "../types";
+import { encodeFileUpload } from "./artifacts";
 
 // --- Constants ---
 
@@ -197,7 +197,7 @@ function truncate(text: string, maxLen: number): string {
  * Creates sandbox tools that run Python code in an isolated Vercel Sandbox
  * microVM and retrieve output files into artifacts/.
  */
-export function createSandboxTools(thread: BotThread) {
+export function createSandboxTools() {
   const runPythonCode = tool({
     description:
       "Execute Python code in an isolated Vercel Sandbox (microVM) with full package support. " +
@@ -351,6 +351,7 @@ export function createSandboxTools(thread: BotThread) {
 
         // --- 5. Retrieve output files ---
         const retrievedFiles: string[] = [];
+        const fileUploadMarkers: string[] = [];
 
         if (outputFiles && outputFiles.length > 0) {
           await fs.mkdir(ARTIFACTS_DIR, { recursive: true });
@@ -376,7 +377,7 @@ export function createSandboxTools(thread: BotThread) {
               await fs.writeFile(localPath, buffer);
               retrievedFiles.push(path.basename(filename));
 
-              // Post to chat
+              // Encode file upload for delivery layer
               const ext = path.extname(filename).slice(1).toLowerCase();
               const mimeMap: Record<string, string> = {
                 png: "image/png",
@@ -391,16 +392,14 @@ export function createSandboxTools(thread: BotThread) {
               };
               const mimeType = mimeMap[ext] || "application/octet-stream";
 
-              await thread.post({
-                markdown: path.basename(filename),
-                files: [
-                  {
-                    data: buffer,
-                    filename: path.basename(filename),
-                    mimeType,
-                  },
-                ],
-              });
+              fileUploadMarkers.push(
+                encodeFileUpload({
+                  caption: path.basename(filename),
+                  filename: path.basename(filename),
+                  mimeType,
+                  dataBase64: buffer.toString("base64"),
+                }),
+              );
 
               console.log(
                 `[rina:sandbox] retrieved: ${filename} (${(buffer.length / 1024).toFixed(1)} KB)`,
@@ -440,6 +439,11 @@ export function createSandboxTools(thread: BotThread) {
             "Warning: none of the expected output files were found. " +
               "Check that the script writes files to the current directory.",
           );
+        }
+
+        // Append file upload markers for the delivery layer
+        for (const marker of fileUploadMarkers) {
+          parts.push(marker);
         }
 
         console.log(

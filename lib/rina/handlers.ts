@@ -1,7 +1,8 @@
 import type { ModelMessage } from "ai";
 import type { Adapter, Chat } from "chat";
 import { isAccessAllowed } from "./access-control";
-import { handleQuery } from "./agent";
+import { runAgent } from "./agent";
+import { deliverToChat } from "./delivery";
 import { ThreadLogger } from "./logger";
 import {
   buildPromptFromMessage,
@@ -69,7 +70,9 @@ async function runAssistant(
   if (warnings.length > 0) {
     await thread.post({ markdown: warnings.map((w) => `> ${w}`).join("\n") });
   }
-  await handleQuery(thread, content, opts);
+  const stream = await runAgent(content, opts);
+  await deliverToChat(stream, thread);
+  await opts.logger?.flush();
 }
 
 async function postInternalError(thread: BotThread): Promise<void> {
