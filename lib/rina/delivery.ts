@@ -1,6 +1,6 @@
-import { TOOL_STATUS } from "./constants";
-import { isFileUploadResult, type FileUploadResult } from "./tools/artifacts";
 import type { StreamPart } from "./agent";
+import { getToolStatus } from "./tools/registry";
+import { extractFileUploads, type FileUploadResult } from "./tools/results";
 import type { BotThread } from "./types";
 
 const RETRY_DELAYS_MS = [400, 1200, 2500];
@@ -77,7 +77,7 @@ async function postToolStatus(
   if (part.type !== "tool-input-start" || !part.toolName) return;
 
   console.log(`[rina] tool: ${part.toolName}`);
-  const status = TOOL_STATUS[part.toolName];
+  const status = getToolStatus(part.toolName);
   if (status) {
     await postWithRetry(thread, `> ${status}`);
   }
@@ -121,24 +121,8 @@ async function handleToolResultUploads(
   const raw = (part as StreamPart & { output?: unknown }).output
     ?? (part as StreamPart & { result?: unknown }).result;
 
-  // Single file upload (artifacts, arxiv)
-  if (isFileUploadResult(raw)) {
-    await postFileUpload(raw, thread);
-    return;
-  }
-
-  // Structured result with files array (sandbox)
-  if (
-    typeof raw === "object" &&
-    raw !== null &&
-    "files" in raw &&
-    Array.isArray((raw as { files: unknown }).files)
-  ) {
-    for (const file of (raw as { files: unknown[] }).files) {
-      if (isFileUploadResult(file)) {
-        await postFileUpload(file, thread);
-      }
-    }
+  for (const file of extractFileUploads(raw)) {
+    await postFileUpload(file, thread);
   }
 }
 
@@ -195,6 +179,8 @@ async function consumeStream(
   thread: BotThread,
   handlers: TextBlockStreamHandlers,
 ): Promise<void> {
+  const announcedTools = new Set<string>();
+
   for await (const part of fullStream) {
     if (part.type === "text-start") {
       await handlers.onTextStart?.();
@@ -208,7 +194,10 @@ async function consumeStream(
       await handlers.onTextEnd?.();
     }
 
-    await postToolStatus(thread, part);
+    if (part.toolName && !announcedTools.has(part.toolName)) {
+      announcedTools.add(part.toolName);
+      await postToolStatus(thread, part);
+    }
     await handleToolResultUploads(part, thread);
   }
 }

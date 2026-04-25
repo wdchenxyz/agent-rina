@@ -6,7 +6,7 @@ import { tool } from "ai";
 import { extract as tarExtract } from "tar";
 import { z } from "zod";
 
-import type { FileUploadResult } from "./artifacts";
+import type { FileUploadResult } from "./results";
 
 const PAPERS_DIR = process.env.VERCEL
   ? path.join("/tmp", "artifacts/papers")

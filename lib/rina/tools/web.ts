@@ -2,6 +2,13 @@ import { google } from "@ai-sdk/google";
 import { gateway, generateText, tool } from "ai";
 import { z } from "zod";
 
+import {
+  toolResult,
+  toolResultToModelText,
+  type RinaToolResult,
+  type ToolCitation,
+} from "./results";
+
 /**
  * Web search tool: internally calls Gemini with google_search grounding.
  * This is a workaround because Gemini does not support mixing custom tools
@@ -31,6 +38,28 @@ export const webSearch = tool({
     };
   },
 });
+
+async function executeWebSearch(query: string): Promise<{
+  text: string;
+  sources: ToolCitation[];
+}> {
+  const { text, sources } = await generateText({
+    model: gateway("google/gemini-3.1-flash-lite-preview"),
+    tools: { google_search: google.tools.googleSearch({}) },
+    prompt: query,
+  });
+
+  return {
+    text,
+    sources:
+      sources
+        ?.filter((s): s is typeof s & { url: string } => "url" in s)
+        .map((s) => ({
+          url: s.url,
+          title: "title" in s ? (s.title as string) : undefined,
+        })) ?? [],
+  };
+}
 
 /**
  * Fetch webpage tool: internally calls Gemini with url_context grounding.
@@ -139,7 +168,126 @@ export const perplexitySearch = tool({
   },
 });
 
+async function executePerplexitySearch({
+  query,
+  recency,
+  maxResults,
+}: {
+  query: string;
+  recency?: "day" | "week" | "month" | "year";
+  maxResults?: number;
+}): Promise<{
+  results: Array<{ title: string; url: string; snippet: string; date: string }>;
+  text?: string;
+}> {
+  const result = await generateText({
+    model: gateway("openai/gpt-5.3-chat"),
+    prompt: `Search for: ${query}`,
+    tools: {
+      perplexity_search: gateway.tools.perplexitySearch({
+        ...(recency && { searchRecencyFilter: recency }),
+        ...(maxResults && { maxResults }),
+      }),
+    },
+  });
+
+  const tr = result.steps[0]?.toolResults?.[0] as
+    | { output?: { results?: Array<Record<string, unknown>> } }
+    | undefined;
+  const raw = tr?.output?.results;
+
+  if (raw?.length) {
+    return {
+      results: raw.map((r) => ({
+        title: (r.title as string) ?? "",
+        url: (r.url as string) ?? "",
+        snippet: (r.snippet as string) ?? "",
+        date: (r.date as string) ?? "",
+      })),
+    };
+  }
+
+  return { results: [], text: result.text || undefined };
+}
+
+export const researchWeb = tool({
+  description:
+    "Research a factual or time-sensitive question by cross-checking Google-grounded web search and Perplexity results. Use this as the default for important current-information requests.",
+  inputSchema: z.object({
+    query: z.string().describe("The research question or search query"),
+    recency: z
+      .enum(["day", "week", "month", "year"])
+      .optional()
+      .describe("Optional freshness filter for the Perplexity side of the search."),
+    maxResults: z
+      .number()
+      .min(1)
+      .max(20)
+      .optional()
+      .describe("Maximum Perplexity results to return."),
+  }),
+  execute: async ({ query, recency, maxResults }): Promise<RinaToolResult> => {
+    const started = Date.now();
+    const [grounded, perplexity] = await Promise.allSettled([
+      executeWebSearch(query),
+      executePerplexitySearch({ query, recency, maxResults }),
+    ]);
+
+    const warnings: string[] = [];
+    const citations = new Map<string, ToolCitation>();
+    const sections: string[] = [];
+
+    if (grounded.status === "fulfilled") {
+      sections.push(`Google-grounded answer:\n${grounded.value.text}`);
+      for (const source of grounded.value.sources) citations.set(source.url, source);
+    } else {
+      warnings.push(`Google-grounded search failed: ${grounded.reason}`);
+    }
+
+    if (perplexity.status === "fulfilled") {
+      if (perplexity.value.results.length > 0) {
+        sections.push(
+          `Perplexity results:\n${perplexity.value.results
+            .map((result, index) =>
+              [
+                `${index + 1}. ${result.title}`,
+                result.date ? `Date: ${result.date}` : null,
+                `URL: ${result.url}`,
+                result.snippet ? `Excerpt: ${result.snippet}` : null,
+              ]
+                .filter(Boolean)
+                .join("\n"),
+            )
+            .join("\n\n")}`,
+        );
+        for (const result of perplexity.value.results) {
+          if (result.url) {
+            citations.set(result.url, { title: result.title || undefined, url: result.url });
+          }
+        }
+      } else if (perplexity.value.text) {
+        sections.push(`Perplexity fallback:\n${perplexity.value.text}`);
+      }
+    } else {
+      warnings.push(`Perplexity search failed: ${perplexity.reason}`);
+    }
+
+    return toolResult({
+      ok: sections.length > 0,
+      summary: sections.join("\n\n") || "No search results found.",
+      citations: [...citations.values()],
+      warnings: warnings.length > 0 ? warnings : undefined,
+      metrics: { elapsedMs: Date.now() - started },
+    });
+  },
+  toModelOutput: ({ output }) => ({
+    type: "text" as const,
+    value: toolResultToModelText(output),
+  }),
+});
+
 export const webTools = {
+  researchWeb,
   webSearch,
   fetchWebpage,
   perplexitySearch,
