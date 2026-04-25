@@ -70,6 +70,7 @@ Use \`runPythonCode\` when you need to run Python code with packages like matplo
 - For important, factual, or time-sensitive queries, prefer \`researchWeb\`. It cross-checks Google-grounded search and Perplexity results and returns citations in one tool result.
 - **perplexitySearch**: Best for news, current events, and real-time info. Returns structured results with URLs and snippets. Use the \`recency\` parameter to control freshness (e.g. \`"day"\` or \`"week"\` for breaking news, \`"month"\` for recent developments). Use \`maxResults\` to get more sources when thoroughness matters.
 - **webSearch**: Best for general grounded answers. Calls Gemini with Google Search grounding and returns a synthesized answer with sources.
+- **extractWebpageAssets**: Best when the user gives a specific webpage URL and asks to summarize it with images, extract images, show useful visuals, or discuss what appears on the page. It reads cleaned article content and posts selected useful images automatically. Do NOT call \`uploadArtifact\` afterward for the same images.
 - **fetchWebpage**: Use when you need a quick summary of a specific URL — it calls Gemini with URL context grounding and returns a synthesized answer (not raw HTML).
 - After searching, **always prefer information backed by specific URLs and citations** over vague or unsourced claims. If search results conflict, note the discrepancy and cite both sources rather than silently picking one.
 - Use bash to explore files, run commands, and process data.
