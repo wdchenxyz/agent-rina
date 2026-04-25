@@ -12,6 +12,7 @@ import {
   MAX_INBOUND_IMAGE_BYTES,
   SUPPORTED_FILE_MIMES,
 } from "./constants";
+import { imageDebug } from "./debug";
 import type { BotThread, IncomingMessage } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,13 @@ function mergeAdjacentMessages(history: ModelMessage[]): ModelMessage[] {
   }
 
   return merged;
+}
+
+function getMaxHistoryMessages(): number {
+  const raw = process.env.RINA_MAX_HISTORY_MESSAGES;
+  if (!raw) return 30;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,11 +247,11 @@ export async function buildPromptFromMessage(
   const text = (prefix + (message.text?.trim() ?? "")).trim();
   const supportedAttachments = getSupportedAttachments(message);
 
-  console.log(
+  imageDebug(
     `[rina:image-debug] buildPromptFromMessage: text="${text}", total attachments=${message.attachments?.length ?? 0}, supported attachments=${supportedAttachments.length}`,
   );
   for (const att of supportedAttachments) {
-    console.log(
+    imageDebug(
       `[rina:image-debug]   attachment: name=${att.name}, type=${att.type}, mimeType=${att.mimeType}, url=${att.url?.slice(0, 80)}...`,
     );
   }
@@ -260,7 +268,7 @@ export async function buildPromptFromMessage(
   parts.push(
     ...(await collectMediaParts(supportedAttachments, {
       onSkipped: (attachment, index) => {
-        console.log(
+        imageDebug(
           `[rina:image-debug]   attachment #${index + 1}: unsupported or unreadable (name=${attachment.name}, mime=${attachment.mimeType})`,
         );
         warnings.push(
@@ -268,12 +276,12 @@ export async function buildPromptFromMessage(
         );
       },
       onSuccess: (attachment, part, index) => {
-        console.log(
+        imageDebug(
           `[rina:image-debug]   attachment #${index + 1}: OK, type=${part.type}, name=${attachment.name}`,
         );
       },
       onError: (_attachment, index, err) => {
-        console.error(
+        imageDebug(
           `[rina:image-debug]   attachment #${index + 1}: error downloading`,
           err,
         );
@@ -340,7 +348,7 @@ export async function convertThreadHistory(
     const text = msg.text?.trim() ?? "";
     if (!text && (!msg.attachments || msg.attachments.length === 0)) continue;
 
-    console.log(
+    imageDebug(
       `[rina:image-debug] history msg: id=${msg.id}, isMe=${msg.author.isMe}, text="${text.slice(0, 60)}", attachments=${msg.attachments?.length ?? 0}`,
     );
 
@@ -356,7 +364,7 @@ export async function convertThreadHistory(
       // This is necessary because users may refer back to these files.
       const botMediaParts = await extractMediaParts(msg);
       if (botMediaParts.length > 0) {
-        console.log(
+        imageDebug(
           `[rina:image-debug]   -> bot msg has ${botMediaParts.length} file(s), injecting as user context`,
         );
         history.push(createBotFileContextMessage(botMediaParts));
@@ -365,7 +373,7 @@ export async function convertThreadHistory(
       // Other users' messages → user role with optional media
       const mediaParts = await extractMediaParts(msg);
 
-      console.log(
+      imageDebug(
         `[rina:image-debug]   -> user msg added with ${mediaParts.length} file(s)`,
       );
       history.push(createUserHistoryMessage(text, msg.author, mediaParts));
@@ -376,9 +384,11 @@ export async function convertThreadHistory(
   // Merge consecutive same-role messages to avoid API errors (e.g. when a
   // synthetic user file message is followed by a real user message).
   const merged = mergeAdjacentMessages(history);
+  const maxHistoryMessages = getMaxHistoryMessages();
+  const bounded = merged.slice(-maxHistoryMessages);
 
-  console.log(
-    `[rina:image-debug] convertThreadHistory: ${merged.length} messages total (${history.length} before merge)`,
+  imageDebug(
+    `[rina:image-debug] convertThreadHistory: ${bounded.length} messages total (${history.length} before merge, ${merged.length} after merge)`,
   );
-  return merged;
+  return bounded;
 }

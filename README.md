@@ -1,6 +1,6 @@
 # Agent Rina
 
-Multi-platform AI bot powered by Chat SDK + Claude Agent SDK, supporting:
+Multi-platform AI bot powered by Chat SDK + AI SDK `ToolLoopAgent`, supporting:
 
 - Slack
 - Telegram
@@ -8,15 +8,17 @@ Multi-platform AI bot powered by Chat SDK + Claude Agent SDK, supporting:
 ## Architecture
 
 - Chat adapters: `lib/bot/index.ts`
-- Shared handlers: `lib/bot/handlers.ts`
-- Claude runtime/streaming: `lib/bot/agent-runtime.ts`
+- Shared Rina handlers: `lib/rina/handlers.ts`
+- Agent runtime/tool harness: `lib/rina/agent.ts`
+- Tool registry and routing: `lib/rina/tools/registry.ts`, `lib/rina/planner.ts`
+- Delivery bridge: `lib/rina/delivery.ts`
 - Webhook route: `app/api/webhooks/[platform]/route.ts`
 
 ## Environment Variables
 
 Required for all modes:
 
-- `ANTHROPIC_API_KEY`
+- `AI_GATEWAY_API_KEY`
 - `REDIS_URL`
 
 Slack (optional, both required together):
@@ -38,7 +40,8 @@ Optional:
 - `BOT_ALLOWED_USER_IDS_TELEGRAM` (comma-separated Telegram user IDs)
 - `BOT_ALLOWED_CHAT_IDS_SLACK` (comma-separated Slack channel IDs)
 - `BOT_ALLOWED_CHAT_IDS_TELEGRAM` (comma-separated Telegram chat IDs)
-- `CLAUDE_SDK_LOG_STDERR=1` (optional, logs Claude subprocess stderr for debugging)
+- `RINA_MAX_HISTORY_MESSAGES` (default: `30`, caps thread messages sent to the model)
+- `RINA_IMAGE_DEBUG=1` (optional, logs detailed attachment/model content shaping)
 - `TELEGRAM_WEBHOOK_URL` (for webhook registration convenience)
 
 Allowlist behavior:
@@ -77,8 +80,6 @@ curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
   -d "url=$TELEGRAM_WEBHOOK_URL" \
   -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
 ```
-
-Detailed guide: `docs/telegram-setup.md`
 
 ## Platform Behavior
 
