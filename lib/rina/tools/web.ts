@@ -10,6 +10,8 @@ import {
 } from "./results";
 import { extractWebpageAssets } from "./webpage-assets";
 
+const PERPLEXITY_GATEWAY_TIMEOUT_MS = 45_000;
+
 /**
  * Web search tool: internally calls Gemini with google_search grounding.
  * This is a workaround because Gemini does not support mixing custom tools
@@ -129,7 +131,8 @@ export const perplexitySearch = tool({
   execute: async ({ query, recency, maxResults }) => {
     try {
       const result = await generateText({
-        model: gateway("openai/gpt-5.3-chat"),
+        model: gateway("openai/gpt-5.5"),
+        abortSignal: AbortSignal.timeout(PERPLEXITY_GATEWAY_TIMEOUT_MS),
         prompt: `Search for: ${query}`,
         tools: {
           perplexity_search: gateway.tools.perplexitySearch({
@@ -182,7 +185,8 @@ async function executePerplexitySearch({
   text?: string;
 }> {
   const result = await generateText({
-    model: gateway("openai/gpt-5.3-chat"),
+    model: gateway("openai/gpt-5.5"),
+    abortSignal: AbortSignal.timeout(PERPLEXITY_GATEWAY_TIMEOUT_MS),
     prompt: `Search for: ${query}`,
     tools: {
       perplexity_search: gateway.tools.perplexitySearch({

@@ -178,7 +178,7 @@ export async function runAgent(
 
   const agent = new ToolLoopAgent({
     // model: gateway("anthropic/claude-sonnet-4-6"),
-    model: gateway("openai/gpt-5.2"),
+    model: gateway("openai/gpt-5.5"),
     instructions: SYSTEM_PROMPT + mentionInstructions(opts.platform ?? "slack"),
     tools: allTools,
     stopWhen: stepCountIs(MAX_STEPS),
