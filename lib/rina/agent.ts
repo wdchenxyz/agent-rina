@@ -85,6 +85,22 @@ function getBashAndSkillTools(): Promise<Record<string, unknown>> {
 // Taps into the stream to log tool calls, results, and text blocks without
 // altering what downstream consumers see.
 
+function stringifyToolOutputForLog(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (raw === undefined) return "(no output)";
+
+  return JSON.stringify(
+    raw,
+    (key, value: unknown) => {
+      if (key === "dataBase64" && typeof value === "string") {
+        return `[base64 redacted, ${value.length} chars]`;
+      }
+      return value;
+    },
+    2,
+  ) ?? "(unserializable)";
+}
+
 export async function* withLogging(
   stream: AsyncIterable<StreamPart>,
   logger: ThreadLogger,
@@ -121,13 +137,7 @@ export async function* withLogging(
         part.toolName ?? toolNamesByCall.get(toolCallId) ?? "unknown";
       const raw = (part as StreamPart & { output?: unknown; result?: unknown }).output
         ?? (part as StreamPart & { result?: unknown }).result;
-      const output =
-        typeof raw === "string"
-          ? raw
-          : raw === undefined
-            ? "(no output)"
-            : JSON.stringify(raw, null, 2) ?? "(unserializable)";
-      logger.logToolResult(toolName, output);
+      logger.logToolResult(toolName, stringifyToolOutputForLog(raw));
     }
 
     // Text block tracking

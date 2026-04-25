@@ -72,6 +72,13 @@ export const TOOL_REGISTRY = {
     latency: "medium",
     description: "Read and summarize a specific URL.",
   },
+  extractWebpageAssets: {
+    category: "web",
+    status: "Extracting webpage and images...",
+    sideEffect: "network",
+    latency: "high",
+    description: "Extract readable page content and post useful article images.",
+  },
   downloadFile: {
     category: "artifact",
     status: "Downloading file...",
@@ -166,6 +173,7 @@ const TOOL_NAMES_BY_INTENT: Record<ToolIntent, KnownToolName[]> = {
     "researchWeb",
     "webSearch",
     "perplexitySearch",
+    "extractWebpageAssets",
     "fetchWebpage",
     "downloadFile",
     "listArtifacts",

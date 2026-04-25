@@ -67,6 +67,21 @@ Webhook endpoints:
 - Slack: `POST /api/webhooks/slack`
 - Telegram: `POST /api/webhooks/telegram`
 
+CLI playground:
+
+```bash
+pnpm pg "summarize this link and include useful images: <public-article-url>"
+```
+
+Replace `<public-article-url>` with a real public article URL. This bypasses Slack/Telegram and exercises the same Rina agent, tool registry, and delivery bridge with a mock chat thread.
+
+## Tool Harness
+
+- `researchWeb`: cross-checks Google-grounded search and Perplexity for current sourced answers.
+- `fetchWebpage`: quick text-only read of a specific URL through Gemini URL context.
+- `extractWebpageAssets`: safe-fetches a specific webpage, extracts readable content with Defuddle, ranks useful article images, and posts selected images through the existing file delivery layer.
+- `runPythonCode`: runs Python in a Vercel Sandbox and auto-posts requested output files.
+
 ## Telegram Setup
 
 Telegram requires a public HTTPS webhook URL. For local development, expose your local server with a tunnel (for example ngrok or cloudflared) and set:
@@ -93,11 +108,20 @@ Telegram:
 
 - Responds to mentions in groups/supergroups
 - Responds to direct messages via `onNewMessage` fallback handler
-- Uses same per-thread Claude session resume logic
+- Uses the same per-thread Rina history and digest context
 
 ## Verification
 
 ```bash
+pnpm exec tsc --noEmit
 pnpm lint
 pnpm build
+```
+
+Suggested local smoke prompts:
+
+```bash
+pnpm pg "summarize this link and include useful images: <public-article-url>"
+pnpm pg "summarize this link without images: <public-article-url>"
+pnpm pg "try to summarize http://localhost:3000 and explain the result briefly"
 ```
