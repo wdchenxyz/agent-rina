@@ -4,7 +4,11 @@ import path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 
-import type { FileUploadResult } from "./artifacts";
+import {
+  toolResult,
+  toolResultToModelText,
+  type FileUploadResult,
+} from "./results";
 
 // --- Constants ---
 
@@ -17,6 +21,8 @@ const SNAPSHOT_CACHE_PATH = process.env.VERCEL
 const SANDBOX_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 const COMMAND_TIMEOUT_MS = 90 * 1000; // 90 seconds for the python script
 const MAX_OUTPUT_CHARS = 4000;
+const MAX_OUTPUT_FILES = 8;
+const MAX_OUTPUT_FILE_BYTES = 8 * 1024 * 1024;
 
 /**
  * Packages pre-installed in the snapshot image (alongside uv).
@@ -191,6 +197,22 @@ function truncate(text: string, maxLen: number): string {
   );
 }
 
+function createRunId(): string {
+  return new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+}
+
+function safeSandboxOutputPath(filename: string): string | null {
+  const normalized = path.posix.normalize(filename.replaceAll("\\", "/"));
+  if (
+    normalized.startsWith("../") ||
+    normalized === ".." ||
+    path.posix.isAbsolute(normalized)
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
 // --- Tool factory ---
 
 /**
@@ -234,13 +256,14 @@ export function createSandboxTools() {
             "These files will be downloaded to artifacts/ and posted to chat.",
         ),
     }),
-    execute: async ({ code, packages, outputFiles }) => {
+    execute: async ({ code, packages, outputFiles }, { abortSignal }) => {
       const { Sandbox } = await import("@vercel/sandbox");
 
       let sandbox: Awaited<ReturnType<typeof Sandbox.create>> | null = null;
 
       try {
         const tTotal = Date.now();
+        const runId = createRunId();
 
         // --- 1. Create sandbox (from snapshot if available) ---
         const tCreate = Date.now();
@@ -322,6 +345,8 @@ export function createSandboxTools() {
         // --- 4. Run the script ---
         const tRun = Date.now();
         const controller = new AbortController();
+        const abort = () => controller.abort();
+        abortSignal?.addEventListener("abort", abort, { once: true });
         const timer = setTimeout(
           () => controller.abort(),
           COMMAND_TIMEOUT_MS,
@@ -340,6 +365,7 @@ export function createSandboxTools() {
           });
         } finally {
           clearTimeout(timer);
+          abortSignal?.removeEventListener("abort", abort);
         }
 
         const stdout = await result.stdout();
@@ -353,10 +379,25 @@ export function createSandboxTools() {
         const retrievedFiles: string[] = [];
         const uploads: FileUploadResult[] = [];
 
-        if (outputFiles && outputFiles.length > 0) {
+        const requestedOutputFiles = (outputFiles ?? []).slice(0, MAX_OUTPUT_FILES);
+        const warnings: string[] = [];
+
+        if ((outputFiles?.length ?? 0) > MAX_OUTPUT_FILES) {
+          warnings.push(
+            `Only the first ${MAX_OUTPUT_FILES} output files were retrieved.`,
+          );
+        }
+
+        if (requestedOutputFiles.length > 0) {
           await fs.mkdir(ARTIFACTS_DIR, { recursive: true });
 
-          for (const filename of outputFiles) {
+          for (const requestedFilename of requestedOutputFiles) {
+            const filename = safeSandboxOutputPath(requestedFilename);
+            if (!filename) {
+              warnings.push(`Skipped unsafe output path: ${requestedFilename}`);
+              continue;
+            }
+
             try {
               const buffer = await sandbox.readFileToBuffer({
                 path: filename,
@@ -369,13 +410,26 @@ export function createSandboxTools() {
                 continue;
               }
 
+              if (buffer.length > MAX_OUTPUT_FILE_BYTES) {
+                warnings.push(
+                  `Skipped ${filename}: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB exceeds the 8 MB upload limit.`,
+                );
+                continue;
+              }
+
               // Save to local artifacts/
-              const localPath = path.join(
-                ARTIFACTS_DIR,
+              const localRelativePath = path.join(
+                "sandbox",
+                runId,
                 path.basename(filename),
               );
+              const localPath = path.join(
+                ARTIFACTS_DIR,
+                localRelativePath,
+              );
+              await fs.mkdir(path.dirname(localPath), { recursive: true });
               await fs.writeFile(localPath, buffer);
-              retrievedFiles.push(path.basename(filename));
+              retrievedFiles.push(localRelativePath);
 
               // Build file upload for delivery layer
               const ext = path.extname(filename).slice(1).toLowerCase();
@@ -433,11 +487,15 @@ export function createSandboxTools() {
           parts.push(
             `Retrieved files: ${retrievedFiles.join(", ")} (saved to artifacts/ and posted to chat)`,
           );
-        } else if (outputFiles && outputFiles.length > 0) {
+        } else if (requestedOutputFiles.length > 0) {
           parts.push(
             "Warning: none of the expected output files were found. " +
               "Check that the script writes files to the current directory.",
           );
+        }
+
+        if (warnings.length > 0) {
+          parts.push(`Warnings:\n${warnings.map((w) => `- ${w}`).join("\n")}`);
         }
 
         console.log(
@@ -447,10 +505,13 @@ export function createSandboxTools() {
         const summary = parts.join("\n\n");
 
         // Return structured result with files if any, plain string otherwise
-        if (uploads.length > 0) {
-          return { summary, files: uploads };
-        }
-        return summary;
+        return toolResult({
+          ok: result.exitCode === 0,
+          summary,
+          files: uploads.length > 0 ? uploads : undefined,
+          warnings: warnings.length > 0 ? warnings : undefined,
+          metrics: { elapsedMs: Date.now() - tTotal },
+        });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : String(error);
@@ -472,7 +533,7 @@ export function createSandboxTools() {
     },
     toModelOutput: ({ output }) => ({
       type: "text" as const,
-      value: typeof output === "string" ? output : output.summary,
+      value: toolResultToModelText(output),
     }),
   });
 

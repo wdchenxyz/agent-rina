@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { ModelMessage, UserContent } from "ai";
+import type { RequestPlan } from "./planner";
 import type { IncomingMessage } from "./types";
 
 const LOGS_DIR = path.resolve("logs/threads");
@@ -148,6 +149,20 @@ export class ThreadLogger {
     }
     lines.push("");
     this.append(lines.join("\n"));
+  }
+
+  logRunMetadata(metadata: {
+    plan: RequestPlan;
+    activeTools: readonly string[];
+  }): void {
+    this.append(
+      [
+        ">> Run Metadata",
+        `Intent: ${metadata.plan.intent} (${metadata.plan.reason})`,
+        `Active tools: ${metadata.activeTools.join(", ") || "(none)"}`,
+        "",
+      ].join("\n"),
+    );
   }
 
   logToolCall(toolName: string, input: string): void {

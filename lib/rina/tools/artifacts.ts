@@ -4,6 +4,12 @@ import path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 
+import {
+  toolResult,
+  toolResultToModelText,
+  type RinaToolResult,
+} from "./results";
+
 const ARTIFACTS_DIR = process.env.VERCEL
   ? path.join("/tmp", "artifacts")
   : path.resolve("artifacts");
@@ -62,23 +68,7 @@ async function recursiveList(dir: string, base: string): Promise<string[]> {
   return results;
 }
 
-/** Structured result returned by tools that want the delivery layer to upload a file. */
-export interface FileUploadResult {
-  _type: "file-upload";
-  caption: string;
-  filename: string;
-  mimeType: string;
-  /** Base64-encoded file data */
-  dataBase64: string;
-}
-
-export function isFileUploadResult(value: unknown): value is FileUploadResult {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as FileUploadResult)._type === "file-upload"
-  );
-}
+export { isFileUploadResult, type FileUploadResult } from "./results";
 
 /**
  * Creates tools for listing and uploading files from the artifacts/ directory.
@@ -130,7 +120,7 @@ export function createArtifactTools() {
         .optional()
         .describe("Optional caption to display with the file"),
     }),
-    execute: async ({ path: artifactPath, caption }): Promise<string | FileUploadResult> => {
+    execute: async ({ path: artifactPath, caption }): Promise<string | RinaToolResult> => {
       let resolved: string;
       try {
         resolved = guardPath(artifactPath);
@@ -159,19 +149,23 @@ export function createArtifactTools() {
       const data = await fs.readFile(resolved);
       const filename = path.basename(artifactPath);
 
-      return {
-        _type: "file-upload",
-        caption: caption || filename,
-        filename,
-        mimeType,
-        dataBase64: data.toString("base64"),
-      };
+      return toolResult({
+        ok: true,
+        summary: `Uploaded ${filename} to chat.`,
+        files: [
+          {
+            _type: "file-upload",
+            caption: caption || filename,
+            filename,
+            mimeType,
+            dataBase64: data.toString("base64"),
+          },
+        ],
+      });
     },
     toModelOutput: ({ output }) => ({
       type: "text" as const,
-      value: typeof output === "string"
-        ? output
-        : `Uploaded ${output.filename} to chat.`,
+      value: toolResultToModelText(output),
     }),
   });
 
@@ -242,8 +236,16 @@ export function createArtifactTools() {
 
       await fs.writeFile(resolved, buffer);
 
-      return `Downloaded ${filename} (${(buffer.length / 1024).toFixed(1)} KB) to artifacts/. Use uploadArtifact to share it in chat.`;
+      return toolResult({
+        ok: true,
+        summary: `Downloaded ${filename} (${(buffer.length / 1024).toFixed(1)} KB) to artifacts/. Use uploadArtifact to share it in chat.`,
+        data: { path: filename, bytes: buffer.length, mimeType },
+      });
     },
+    toModelOutput: ({ output }) => ({
+      type: "text" as const,
+      value: toolResultToModelText(output),
+    }),
   });
 
   return { listArtifacts, uploadArtifact, downloadFile };

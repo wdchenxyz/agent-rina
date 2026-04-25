@@ -12,7 +12,7 @@ import * as readline from "node:readline";
 import * as path from "node:path";
 import * as fs from "node:fs";
 
-import type { ModelMessage, UserContent } from "ai";
+import type { ModelMessage } from "ai";
 import { runAgent } from "../lib/rina/agent";
 import { deliverToChat } from "../lib/rina/delivery";
 import type { BotThread } from "../lib/rina/types";
