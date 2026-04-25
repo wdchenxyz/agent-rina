@@ -8,6 +8,7 @@ import {
   type RinaToolResult,
   type ToolCitation,
 } from "./results";
+import { extractWebpageAssets } from "./webpage-assets";
 
 /**
  * Web search tool: internally calls Gemini with google_search grounding.
@@ -290,5 +291,6 @@ export const webTools = {
   researchWeb,
   webSearch,
   fetchWebpage,
+  extractWebpageAssets,
   perplexitySearch,
 };

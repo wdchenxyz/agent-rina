@@ -27,7 +27,10 @@ export function planRequest(content: UserContent): RequestPlan {
     return { intent: "paper", reason: "paper or arXiv workflow requested" };
   }
 
-  if (/\b(news|latest|today|recent|current|search|look up|web|url|website|source|citation|cite)\b/.test(text)) {
+  if (
+    /https?:\/\/\S+/.test(text) ||
+    /\b(news|latest|today|recent|current|search|look up|web|url|link|website|source|citation|cite)\b/.test(text)
+  ) {
     return { intent: "research", reason: "current or sourced information requested" };
   }
 
