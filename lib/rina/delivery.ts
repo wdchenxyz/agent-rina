@@ -6,6 +6,12 @@ import type { BotThread } from "./types";
 const RETRY_DELAYS_MS = [400, 1200, 2500];
 const TELEGRAM_MAX_LENGTH = 4000;
 
+type ChatPostFile = {
+  data: Buffer;
+  filename: string;
+  mimeType: string;
+};
+
 // --- Helpers ---
 
 function splitLongText(text: string): string[] {
@@ -48,14 +54,67 @@ function isRetryableNetworkError(error: unknown): boolean {
   );
 }
 
+function isTelegramMarkdownValidationError(
+  thread: BotThread,
+  error: unknown,
+): boolean {
+  if (thread.adapter.name !== "telegram" || !(error instanceof Error)) {
+    return false;
+  }
+
+  const withDetails = error as Error & {
+    adapter?: string;
+    code?: string;
+  };
+  const message = error.message.toLowerCase();
+
+  return (
+    withDetails.code === "VALIDATION_ERROR" &&
+    (withDetails.adapter === "telegram" || message.includes("bad request")) &&
+    message.includes("parse entities")
+  );
+}
+
+async function postMarkdownOrRaw(
+  thread: BotThread,
+  content: string,
+  files?: ChatPostFile[],
+): Promise<void> {
+  try {
+    if (files?.length) {
+      await thread.post({ markdown: content, files });
+    } else {
+      await thread.post({ markdown: content });
+    }
+    return;
+  } catch (error) {
+    if (!isTelegramMarkdownValidationError(thread, error)) {
+      throw error;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      "[rina:telegram] Markdown rejected by Telegram; retrying as raw text.",
+      message,
+    );
+  }
+
+  if (files?.length) {
+    await thread.post({ raw: content, files });
+  } else {
+    await thread.post({ raw: content });
+  }
+}
+
 async function postWithRetry(
   thread: BotThread,
   content: string,
+  files?: ChatPostFile[],
 ): Promise<void> {
   let attempt = 0;
   while (true) {
     try {
-      await thread.post({ markdown: content });
+      await postMarkdownOrRaw(thread, content, files);
       return;
     } catch (error) {
       if (
@@ -101,10 +160,9 @@ async function postFileUpload(
   thread: BotThread,
 ): Promise<void> {
   const data = Buffer.from(upload.dataBase64, "base64");
-  await thread.post({
-    markdown: upload.caption,
-    files: [{ data, filename: upload.filename, mimeType: upload.mimeType }],
-  });
+  await postWithRetry(thread, upload.caption, [
+    { data, filename: upload.filename, mimeType: upload.mimeType },
+  ]);
 }
 
 /**
