@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { Defuddle, type DefuddleResponse } from "defuddle/node";
+import type { DefuddleResponse } from "defuddle/node";
 import { parseHTML } from "linkedom";
 import { z } from "zod";
 
@@ -85,6 +85,32 @@ function cleanText(text: string | null | undefined): string | undefined {
 function stripHtmlToText(html: string): string {
   const { document } = parseHTML(html);
   return document.body?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function extractedContent(result: DefuddleResponse): string {
+  const markdown = result.contentMarkdown?.trim();
+  if (markdown) return markdown;
+
+  const content = result.content?.trim() ?? "";
+  if (!content) return "";
+
+  if (/^\s*</.test(content) || /<\/(article|blockquote|div|h[1-6]|li|ol|p|pre|section|table|ul)>/i.test(content)) {
+    return stripHtmlToText(content);
+  }
+
+  return content;
+}
+
+async function parseReadablePage(
+  document: Document,
+  url: string,
+): Promise<DefuddleResponse> {
+  const { Defuddle } = await import("defuddle/node");
+  return Defuddle(document, url, {
+    markdown: true,
+    separateMarkdown: true,
+    useAsync: false,
+  });
 }
 
 function clampMaxImages(value: number | undefined): number {
@@ -570,11 +596,7 @@ export const extractWebpageAssets = tool({
       });
       const html = decodeResponseText(page.buffer, page.contentType);
       const { document } = parseHTML(html);
-      const parsed = await Defuddle(document, page.finalUrl, {
-        markdown: true,
-        separateMarkdown: true,
-        useAsync: false,
-      });
+      const parsed = await parseReadablePage(document, page.finalUrl);
 
       const imageDocument = parseHTML(html).document;
       const candidates = includeImages
@@ -589,7 +611,7 @@ export const extractWebpageAssets = tool({
         warnings.push("Found image candidates, but none passed safety, MIME, or size validation.");
       }
 
-      const content = parsed.contentMarkdown ?? stripHtmlToText(parsed.content);
+      const content = extractedContent(parsed);
       const summary = pageSummaryText({
         result: parsed,
         finalUrl: page.finalUrl,
