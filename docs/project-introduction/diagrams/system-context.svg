@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <filter id="rough" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="2" seed="17" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.4" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M1,1 L11,6 L1,11" fill="none" stroke="#263238" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .title{font:700 38px 'Marker Felt','Comic Sans MS',sans-serif;fill:#183A61}
+      .lane{font:700 22px 'Marker Felt','Comic Sans MS',sans-serif;fill:#4B5D6B;letter-spacing:1px}
+      .label{font:700 22px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#263238;text-anchor:middle}
+      .small{font:500 17px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#455A64;text-anchor:middle}
+      .code{font:600 16px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#183A61;text-anchor:middle}
+      .box{stroke:#263238;stroke-width:3;rx:22;ry:22;filter:url(#rough)}
+      .arrow{fill:none;stroke:#263238;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;marker-end:url(#arrow);filter:url(#rough)}
+      .soft-arrow{fill:none;stroke:#607D8B;stroke-width:2.4;stroke-dasharray:9 9;stroke-linecap:round;marker-end:url(#arrow)}
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="#FFFEFA"/>
+  <text x="80" y="75" class="title">Agent Rina — system context</text>
+  <path d="M78 90 C330 84, 520 98, 760 90" fill="none" stroke="#F3C96B" stroke-width="9" stroke-linecap="round" opacity=".75" filter="url(#rough)"/>
+
+  <text x="155" y="145" class="lane">CHANNELS</text>
+  <text x="490" y="145" class="lane">WEB EDGE</text>
+  <text x="865" y="145" class="lane">RINA CORE</text>
+  <text x="1320" y="145" class="lane">SERVICES</text>
+
+  <rect x="70" y="205" width="250" height="125" fill="#D8E9FF" class="box"/>
+  <text x="195" y="250" class="label">Slack</text>
+  <text x="195" y="282" class="small">mentions · threads</text>
+  <text x="195" y="307" class="small">streaming · reactions</text>
+
+  <rect x="70" y="415" width="250" height="125" fill="#D7F3EE" class="box"/>
+  <text x="195" y="460" class="label">Telegram</text>
+  <text x="195" y="492" class="small">group mentions · DMs</text>
+  <text x="195" y="517" class="small">buffered delivery</text>
+
+  <rect x="390" y="220" width="280" height="135" fill="#FFF1C7" class="box"/>
+  <text x="530" y="260" class="label">Next.js webhook</text>
+  <text x="530" y="293" class="code">POST /api/webhooks/[platform]</text>
+  <text x="530" y="323" class="small">dispatch + background waitUntil</text>
+
+  <rect x="390" y="440" width="280" height="150" fill="#F4E3FF" class="box"/>
+  <text x="530" y="482" class="label">Chat SDK</text>
+  <text x="530" y="516" class="small">Slack / Telegram adapters</text>
+  <text x="530" y="546" class="small">thread subscriptions</text>
+  <text x="530" y="574" class="small">Redis state adapter</text>
+
+  <rect x="760" y="180" width="270" height="135" fill="#E6F1FF" class="box"/>
+  <text x="895" y="221" class="label">Handlers</text>
+  <text x="895" y="253" class="code">access-control · message-input</text>
+  <text x="895" y="282" class="small">history + attachments + lifecycle</text>
+
+  <rect x="760" y="370" width="270" height="155" fill="#DFF3EF" class="box"/>
+  <text x="895" y="413" class="label">Agent runtime</text>
+  <text x="895" y="447" class="code">planner → ToolLoopAgent</text>
+  <text x="895" y="476" class="small">AI Gateway · max 20 steps</text>
+  <text x="895" y="505" class="small">intent-aware active tools</text>
+
+  <rect x="760" y="590" width="270" height="135" fill="#FFE4DD" class="box"/>
+  <text x="895" y="631" class="label">Delivery bridge</text>
+  <text x="895" y="665" class="small">text · status · file results</text>
+  <text x="895" y="694" class="small">retry + platform formatting</text>
+
+  <rect x="1150" y="170" width="350" height="125" fill="#F4E3FF" class="box"/>
+  <text x="1325" y="211" class="label">Model + state</text>
+  <text x="1325" y="244" class="small">AI Gateway · Redis</text>
+  <text x="1325" y="270" class="small">thread history + digest context</text>
+
+  <rect x="1150" y="350" width="350" height="145" fill="#FFF1C7" class="box"/>
+  <text x="1325" y="391" class="label">Research services</text>
+  <text x="1325" y="425" class="small">Google grounding · Perplexity</text>
+  <text x="1325" y="454" class="small">web pages · arXiv sources</text>
+  <text x="1325" y="481" class="small">ranked article images</text>
+
+  <rect x="1150" y="555" width="350" height="145" fill="#D8E9FF" class="box"/>
+  <text x="1325" y="597" class="label">Execution + artifacts</text>
+  <text x="1325" y="631" class="small">Vercel Sandbox · bash skill tools</text>
+  <text x="1325" y="660" class="small">artifacts/ · generated files</text>
+  <text x="1325" y="687" class="small">structured upload results</text>
+
+  <path d="M320 267 C345 267 360 276 390 284" class="arrow"/>
+  <path d="M320 478 C348 470 365 412 405 350" class="arrow"/>
+  <path d="M530 355 C530 382 530 407 530 440" class="arrow"/>
+  <path d="M670 514 C712 500 723 298 760 260" class="arrow"/>
+  <path d="M895 315 C895 334 895 350 895 370" class="arrow"/>
+  <path d="M895 525 C895 547 895 565 895 590" class="arrow"/>
+  <path d="M760 658 C626 670 412 650 300 542" class="arrow"/>
+
+  <path d="M1030 235 C1082 222 1104 220 1150 230" class="soft-arrow"/>
+  <path d="M1030 430 C1084 420 1104 420 1150 420" class="arrow"/>
+  <path d="M1030 468 C1090 505 1095 590 1150 618" class="arrow"/>
+  <path d="M1150 265 C1100 298 1087 345 1025 390" class="soft-arrow"/>
+  <path d="M1150 650 C1100 660 1082 660 1030 658" class="soft-arrow"/>
+
+  <rect x="80" y="790" width="1440" height="66" rx="18" fill="#F7F5EF" stroke="#A8A29A" stroke-width="2" stroke-dasharray="8 7"/>
+  <text x="800" y="824" class="small">One shared cognitive core; platform differences stay at the adapters, lifecycle indicators, and delivery bridge.</text>
+  <text x="800" y="849" class="small">核心保持單一，平台差異集中在介接、處理指示與輸出格式。</text>
+</svg>

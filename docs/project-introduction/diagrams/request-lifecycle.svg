@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <filter id="rough" x="-6%" y="-6%" width="112%" height="112%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.014" numOctaves="2" seed="29" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.3"/>
+    </filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="6" orient="auto">
+      <path d="M1,1 L11,6 L1,11" fill="none" stroke="#263238" stroke-width="2.2" stroke-linecap="round"/>
+    </marker>
+    <style>
+      .title{font:700 38px 'Marker Felt','Comic Sans MS',sans-serif;fill:#183A61}
+      .stepno{font:700 25px 'Marker Felt','Comic Sans MS',sans-serif;fill:#fff;text-anchor:middle}
+      .label{font:700 21px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#263238;text-anchor:middle}
+      .small{font:500 16px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#455A64;text-anchor:middle}
+      .note{font:600 17px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#183A61;text-anchor:middle}
+      .box{stroke:#263238;stroke-width:3;rx:22;ry:22;filter:url(#rough)}
+      .arrow{fill:none;stroke:#263238;stroke-width:3;stroke-linecap:round;marker-end:url(#arrow);filter:url(#rough)}
+      .loop{fill:none;stroke:#4A78A8;stroke-width:3;stroke-dasharray:10 8;stroke-linecap:round;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="#FFFEFA"/>
+  <text x="80" y="75" class="title">A request’s life — from mention to reply</text>
+  <path d="M79 91 C330 83, 560 99, 900 90" fill="none" stroke="#86C9C2" stroke-width="9" stroke-linecap="round" opacity=".7" filter="url(#rough)"/>
+
+  <rect x="70" y="180" width="260" height="145" fill="#D8E9FF" class="box"/>
+  <circle cx="95" cy="195" r="25" fill="#4A78A8" stroke="#263238" stroke-width="2"/>
+  <text x="95" y="204" class="stepno">1</text>
+  <text x="200" y="224" class="label">Receive event</text>
+  <text x="200" y="258" class="small">mention / subscribed message</text>
+  <text x="200" y="286" class="small">or Telegram direct message</text>
+
+  <rect x="420" y="180" width="300" height="145" fill="#FFE4DD" class="box"/>
+  <circle cx="445" cy="195" r="25" fill="#E77A62" stroke="#263238" stroke-width="2"/>
+  <text x="445" y="204" class="stepno">2</text>
+  <text x="570" y="224" class="label">Gate + enrich</text>
+  <text x="570" y="258" class="small">allowlists · ignore own message</text>
+  <text x="570" y="286" class="small">re-fetch missing attachments</text>
+
+  <rect x="810" y="180" width="300" height="145" fill="#F4E3FF" class="box"/>
+  <circle cx="835" cy="195" r="25" fill="#9966C2" stroke="#263238" stroke-width="2"/>
+  <text x="835" y="204" class="stepno">3</text>
+  <text x="960" y="224" class="label">Build model context</text>
+  <text x="960" y="258" class="small">text + image / PDF / text file</text>
+  <text x="960" y="286" class="small">bounded history + digest prelude</text>
+
+  <rect x="1200" y="180" width="300" height="145" fill="#FFF1C7" class="box"/>
+  <circle cx="1225" cy="195" r="25" fill="#D59C24" stroke="#263238" stroke-width="2"/>
+  <text x="1225" y="204" class="stepno">4</text>
+  <text x="1350" y="224" class="label">Plan intent</text>
+  <text x="1350" y="258" class="small">paper · research · data</text>
+  <text x="1350" y="286" class="small">codebase · artifact · chat</text>
+
+  <path d="M330 252 C360 247 382 247 420 252" class="arrow"/>
+  <path d="M720 252 C750 247 774 247 810 252" class="arrow"/>
+  <path d="M1110 252 C1140 247 1166 247 1200 252" class="arrow"/>
+
+  <rect x="1000" y="470" width="330" height="170" fill="#DFF3EF" class="box"/>
+  <circle cx="1025" cy="485" r="25" fill="#3C9B88" stroke="#263238" stroke-width="2"/>
+  <text x="1025" y="494" class="stepno">5</text>
+  <text x="1165" y="520" class="label">ToolLoopAgent</text>
+  <text x="1165" y="554" class="small">initial intent tools for steps 1–2</text>
+  <text x="1165" y="583" class="small">then full toolset when needed</text>
+  <text x="1165" y="612" class="small">hard stop: 20 steps</text>
+
+  <rect x="580" y="470" width="310" height="170" fill="#E6F1FF" class="box"/>
+  <circle cx="605" cy="485" r="25" fill="#4A78A8" stroke="#263238" stroke-width="2"/>
+  <text x="605" y="494" class="stepno">6</text>
+  <text x="735" y="520" class="label">Execute tools</text>
+  <text x="735" y="554" class="small">web · arXiv · sandbox · bash</text>
+  <text x="735" y="583" class="small">artifacts · local skills</text>
+  <text x="735" y="612" class="small">structured text / file results</text>
+
+  <rect x="150" y="470" width="320" height="170" fill="#FFF1C7" class="box"/>
+  <circle cx="175" cy="485" r="25" fill="#D59C24" stroke="#263238" stroke-width="2"/>
+  <text x="175" y="494" class="stepno">7</text>
+  <text x="310" y="520" class="label">Deliver response</text>
+  <text x="310" y="554" class="small">Slack streams text blocks</text>
+  <text x="310" y="583" class="small">Telegram buffers + splits</text>
+  <text x="310" y="612" class="small">tool files upload inline</text>
+
+  <path d="M1350 325 C1347 385 1305 430 1250 470" class="arrow"/>
+  <path d="M1000 555 C960 550 938 550 890 555" class="arrow"/>
+  <path d="M580 555 C540 550 515 550 470 555" class="arrow"/>
+  <path d="M735 470 C748 392 1035 390 1120 470" class="loop"/>
+  <text x="925" y="401" class="note">tool result → next reasoning step</text>
+
+  <path d="M310 640 C310 705 510 748 775 748 C1050 748 1240 706 1245 640" class="loop"/>
+  <text x="777" y="790" class="note">status messages, logging, retries, and Slack processing indicators run across the lifecycle</text>
+
+  <rect x="170" y="835" width="1260" height="40" rx="16" fill="#F7F5EF" stroke="#A8A29A" stroke-width="2" stroke-dasharray="8 7"/>
+  <text x="800" y="861" class="small">Failures are caught at the handler boundary; users receive a concise internal-error message and indicators are cleaned up.</text>
+</svg>

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <filter id="rough" x="-6%" y="-6%" width="112%" height="112%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.013" numOctaves="2" seed="41" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.35"/>
+    </filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="6" orient="auto">
+      <path d="M1,1 L11,6 L1,11" fill="none" stroke="#263238" stroke-width="2.2" stroke-linecap="round"/>
+    </marker>
+    <style>
+      .title{font:700 38px 'Marker Felt','Comic Sans MS',sans-serif;fill:#183A61}
+      .label{font:700 21px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#263238;text-anchor:middle}
+      .small{font:500 16px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#455A64;text-anchor:middle}
+      .left{font:500 16px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#455A64}
+      .code{font:700 17px 'Chalkboard SE','Comic Sans MS',sans-serif;fill:#183A61;text-anchor:middle}
+      .box{stroke:#263238;stroke-width:3;rx:22;ry:22;filter:url(#rough)}
+      .gate{stroke:#C75B4B;stroke-width:3;stroke-dasharray:10 8;rx:26;ry:26;fill:none;filter:url(#rough)}
+      .arrow{fill:none;stroke:#263238;stroke-width:3;stroke-linecap:round;marker-end:url(#arrow);filter:url(#rough)}
+      .dash{fill:none;stroke:#607D8B;stroke-width:2.4;stroke-dasharray:9 9;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="#FFFEFA"/>
+  <text x="80" y="75" class="title">Intent routing + safety boundaries</text>
+  <path d="M79 91 C340 84 570 99 860 90" fill="none" stroke="#F3C96B" stroke-width="9" stroke-linecap="round" opacity=".7" filter="url(#rough)"/>
+
+  <rect x="90" y="180" width="290" height="180" fill="#FFF1C7" class="box"/>
+  <text x="235" y="225" class="label">Intent planner</text>
+  <text x="235" y="262" class="small">keyword + media heuristics</text>
+  <text x="235" y="294" class="small">narrows tools for steps 1–2</text>
+  <text x="235" y="326" class="small">not a permanent permission wall</text>
+
+  <rect x="500" y="130" width="360" height="280" fill="#E6F1FF" class="box"/>
+  <text x="680" y="177" class="label">Tool registry</text>
+  <text x="680" y="215" class="code">research</text>
+  <text x="680" y="243" class="small">webSearch · researchWeb · webpage assets</text>
+  <text x="680" y="279" class="code">paper + data</text>
+  <text x="680" y="307" class="small">arXiv source · Python sandbox</text>
+  <text x="680" y="343" class="code">code + artifacts</text>
+  <text x="680" y="371" class="small">bash · skills · download / upload</text>
+
+  <path d="M380 270 C425 265 455 265 500 270" class="arrow"/>
+
+  <rect x="980" y="115" width="530" height="660" rx="34" fill="#FFF9F7" class="gate"/>
+  <text x="1245" y="158" class="label">External I/O trust boundary</text>
+
+  <rect x="1040" y="195" width="410" height="150" fill="#FFE4DD" class="box"/>
+  <text x="1245" y="235" class="label">Safe webpage fetch</text>
+  <text x="1245" y="268" class="small">HTTP(S) only · no embedded credentials</text>
+  <text x="1245" y="298" class="small">DNS/public-IP checks on every redirect</text>
+  <text x="1245" y="326" class="small">timeouts · redirect + byte caps</text>
+
+  <rect x="1040" y="390" width="410" height="150" fill="#DFF3EF" class="box"/>
+  <text x="1245" y="430" class="label">Isolated execution</text>
+  <text x="1245" y="463" class="small">Vercel Sandbox microVM</text>
+  <text x="1245" y="493" class="small">2 min sandbox · 90 s command</text>
+  <text x="1245" y="521" class="small">bounded output files + size</text>
+
+  <rect x="1040" y="585" width="410" height="150" fill="#F4E3FF" class="box"/>
+  <text x="1245" y="625" class="label">Artifact guardrails</text>
+  <text x="1245" y="658" class="small">path traversal guard · extension allowlist</text>
+  <text x="1245" y="688" class="small">8 MB chat upload cap</text>
+  <text x="1245" y="716" class="small">structured file-upload result</text>
+
+  <path d="M860 215 C910 218 952 230 1040 265" class="arrow"/>
+  <path d="M860 275 C920 320 960 400 1040 460" class="arrow"/>
+  <path d="M860 345 C920 430 960 585 1040 650" class="arrow"/>
+
+  <rect x="100" y="480" width="760" height="260" fill="#F7F5EF" class="box"/>
+  <text x="480" y="525" class="label">Guardrails before and after the model</text>
+  <circle cx="150" cy="574" r="8" fill="#4A78A8"/>
+  <text x="175" y="581" class="left">Access: platform-specific user/chat allowlists override global fallbacks.</text>
+  <circle cx="150" cy="619" r="8" fill="#4A78A8"/>
+  <text x="175" y="626" class="left">Inbound media: max 4; images 5 MB, files 10 MB each.</text>
+  <circle cx="150" cy="664" r="8" fill="#4A78A8"/>
+  <text x="175" y="671" class="left">Agent: 20-step stop condition; base64 content redacted from logs.</text>
+  <circle cx="150" cy="709" r="8" fill="#4A78A8"/>
+  <text x="175" y="716" class="left">Delivery: retry transient failures; Telegram Markdown falls back to raw text.</text>
+
+  <path d="M860 620 C925 620 954 650 1040 660" class="dash"/>
+  <rect x="305" y="800" width="990" height="54" rx="18" fill="#FFF1C7" stroke="#A67C20" stroke-width="2"/>
+  <text x="800" y="834" class="small">Key distinction: routing improves relevance and latency; I/O guards enforce security at execution boundaries.</text>
+</svg>
