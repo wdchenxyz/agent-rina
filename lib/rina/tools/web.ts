@@ -1,5 +1,5 @@
 import { google } from "@ai-sdk/google";
-import { gateway, generateText, tool } from "ai";
+import { gateway, generateText, tool, type ToolSet } from "ai";
 import { z } from "zod";
 
 import {
@@ -9,6 +9,8 @@ import {
   type ToolCitation,
 } from "./results";
 import { extractWebpageAssets } from "./webpage-assets";
+import { createParallelTools } from "./parallel";
+import { resolveWebProvider } from "./web-provider";
 
 const PERPLEXITY_GATEWAY_TIMEOUT_MS = 45_000;
 
@@ -298,3 +300,15 @@ export const webTools = {
   extractWebpageAssets,
   perplexitySearch,
 };
+
+export function createWebTools(): ToolSet {
+  const provider = resolveWebProvider();
+  if (provider === "disabled") return {};
+  if (provider === "gateway") return webTools;
+  return {
+    ...createParallelTools(),
+    // Explicit Perplexity requests retain its recency/maxResults capabilities.
+    perplexitySearch,
+    extractWebpageAssets,
+  };
+}

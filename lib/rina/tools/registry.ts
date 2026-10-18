@@ -1,7 +1,9 @@
+import type { ToolSet } from "ai";
+
 import { createArtifactTools } from "./artifacts";
 import { createArxivTools } from "./arxiv";
 import { createSandboxTools } from "./sandbox";
-import { webTools } from "./web";
+import { createWebTools } from "./web";
 
 export type ToolCategory =
   | "artifact"
@@ -49,14 +51,14 @@ export const TOOL_REGISTRY = {
     status: "Searching the web...",
     sideEffect: "network",
     latency: "medium",
-    description: "Ground a general web answer with Google search via Gemini.",
+    description: "Find web sources with the configured search provider.",
   },
   researchWeb: {
     category: "web",
     status: "Researching across web sources...",
     sideEffect: "network",
     latency: "high",
-    description: "Cross-check Google-grounded and Perplexity results for sourced answers.",
+    description: "Research current information with the configured search provider.",
   },
   perplexitySearch: {
     category: "web",
@@ -143,12 +145,12 @@ export function getToolStatus(toolName: string): string | undefined {
   return TOOL_REGISTRY[toolName as KnownToolName]?.status;
 }
 
-export function createCoreTools() {
+export function createCoreTools(): ToolSet {
   return {
     ...createArxivTools(),
     ...createArtifactTools(),
     ...createSandboxTools(),
-    ...webTools,
+    ...createWebTools(),
   };
 }
 

@@ -41,6 +41,7 @@ Optional:
 - `BOT_ALLOWED_CHAT_IDS_SLACK` (comma-separated Slack channel IDs)
 - `BOT_ALLOWED_CHAT_IDS_TELEGRAM` (comma-separated Telegram chat IDs)
 - `RINA_MAX_HISTORY_MESSAGES` (default: `30`, caps thread messages sent to the model)
+- `RINA_WEB_PROVIDER` (`parallel`, `gateway`, or `disabled`; see Web search below)
 - `RINA_IMAGE_DEBUG=1` (optional, logs detailed attachment/model content shaping)
 - `TELEGRAM_WEBHOOK_URL` (for webhook registration convenience)
 
@@ -77,10 +78,43 @@ Replace `<public-article-url>` with a real public article URL. This bypasses Sla
 
 ## Tool Harness
 
-- `researchWeb`: cross-checks Google-grounded search and Perplexity for current sourced answers.
-- `fetchWebpage`: quick text-only read of a specific URL through Gemini URL context.
+- `researchWeb`: current sourced research through the configured web provider.
+- `fetchWebpage`: text excerpts or a grounded summary of a specific public URL through the configured web provider.
 - `extractWebpageAssets`: safe-fetches a specific webpage, extracts readable content with Defuddle, ranks useful article images, and posts selected images through the existing file delivery layer.
 - `runPythonCode`: runs Python in a Vercel Sandbox and auto-posts requested output files.
+
+## Web search
+
+Rina supports [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
+for free web search and page excerpts, with no Parallel account or API key. Search
+uses Fast mode. Set `RINA_WEB_PROVIDER=parallel` to use it for `researchWeb`,
+`webSearch`, and `fetchWebpage`. The outer Rina model synthesizes answers from
+returned excerpts and source URLs; search does not make an additional model call.
+The main agent still needs its AI Gateway credentials.
+
+When `RINA_WEB_PROVIDER` is unset, an existing `AI_GATEWAY_API_KEY` or
+`VERCEL_OIDC_TOKEN` keeps the Gateway-backed tools. Without either credential,
+web search defaults to anonymous Parallel MCP. Set `RINA_WEB_PROVIDER=gateway`
+explicitly for the existing Google/Perplexity cross-checking and Gemini URL
+context, or `RINA_WEB_PROVIDER=disabled` to remove the web search and page tools
+from the agent. This setting does not disable network access in other tools.
+Invalid provider values fail configuration instead of silently choosing a provider.
+
+Parallel uses the Streamable HTTP endpoint `https://search.parallel.ai/mcp`.
+Calls have a 45-second deadline, respect agent cancellation, and return service
+errors without falling back to another provider. Anonymous use has service rate
+limits. Specific page reads reject local/private URLs before contacting MCP.
+Parallel returns source excerpts, rather than the Gateway's two-provider
+cross-checking or Gemini summaries. For Perplexity's strict `recency` and
+`maxResults` controls, use `perplexitySearch`, which remains explicitly available
+when web tools are enabled. `extractWebpageAssets` continues to handle images.
+
+Try it with the same agent and delivery bridge used by Slack and Telegram:
+
+```bash
+RINA_WEB_PROVIDER=parallel pnpm pg "search for the latest NASA Artemis mission news and cite sources"
+RINA_WEB_PROVIDER=parallel pnpm pg "summarize https://www.nasa.gov/ without images"
+```
 
 ## Telegram Setup
 
@@ -113,7 +147,9 @@ Telegram:
 ## Verification
 
 ```bash
+pnpm exec next typegen
 pnpm exec tsc --noEmit
+pnpm test:web
 pnpm lint
 pnpm build
 ```
